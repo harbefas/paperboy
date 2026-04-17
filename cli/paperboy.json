@@ -1,0 +1,7 @@
+{
+  "name": "paperboy",
+  "description": "paperboy native messaging host",
+  "path": "~/.local/bin/paperboy-host",
+  "type": "stdio",
+  "allowed_extensions": ["paperboy@paperboy.dev"]
+}

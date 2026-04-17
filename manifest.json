@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "paperboy",
+  "version": "1.0.0",
+  "description": "Minimal RSS reader as new tab",
+  "applications": {
+    "gecko": {
+      "id": "paperboy@paperboy.dev"
+    }
+  },
+  "permissions": [
+    "storage",
+    "nativeMessaging",
+    "alarms",
+    "<all_urls>"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "background": {
+    "scripts": ["storage.js", "background.js"],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_popup": "options.html",
+    "default_title": "paperboy"
+  },
+  "content_security_policy": "script-src 'self'; img-src * data: blob:; object-src 'self'",
+  "web_accessible_resources": ["reader.html", "theme.js"]
+}

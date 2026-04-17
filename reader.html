@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>paperboy — reader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="reader.css">
+</head>
+<body>
+  <div class="progress-bar" id="progress-bar"></div>
+  <header class="topbar">
+    <button class="back-btn" id="back-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+    </button>
+    <span class="topbar-title" id="topbar-title"></span>
+    <img class="topbar-icon" id="topbar-icon" src="" alt="" style="display:none">
+    <button class="topbar-btn" id="theme-btn" title="Theme: auto"></button>
+    <button class="topbar-btn" id="keys-btn" title="Keyboard shortcuts">?</button>
+    <div class="font-controls">
+      <button class="topbar-btn" id="font-decrease" title="Decrease font size">A−</button>
+      <button class="topbar-btn" id="font-increase" title="Increase font size">A+</button>
+    </div>
+    <a class="open-link" id="open-link" target="_blank" rel="noopener" title="Open original">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </a>
+    <button class="star-btn-topbar" id="star-btn" title="Star article">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    </button>
+  </header>
+
+  <main class="reader" id="reader">
+    <div class="loading" id="loading">
+      <span class="spinner"></span>
+    </div>
+    <div class="error" id="error" style="display:none"></div>
+    <article id="article" style="display:none">
+      <header class="article-header">
+        <h1 id="article-title"></h1>
+        <div class="article-meta" id="article-meta"></div>
+      </header>
+      <div class="prose" id="article-content"></div>
+    </article>
+  </main>
+
+  <div class="modal-overlay" id="keys-overlay" style="display:none">
+    <div class="modal keys-modal">
+      <div class="modal-header">
+        <span>Keyboard shortcuts</span>
+        <button class="icon-btn" id="keys-close">✕</button>
+      </div>
+      <div class="keys-body">
+        <div class="keys-section">
+          <div class="keys-section-title">Scroll</div>
+          <div class="keys-row"><kbd>j</kbd><kbd>k</kbd><span>scroll down / up</span></div>
+          <div class="keys-row"><kbd>d</kbd><kbd>u</kbd><span>half page down / up</span></div>
+          <div class="keys-row"><kbd>g g</kbd><span>top</span></div>
+          <div class="keys-row"><kbd>G</kbd><span>bottom</span></div>
+          <div class="keys-row"><kbd>1</kbd>–<kbd>9</kbd><kbd>0</kbd><span>jump to heading</span></div>
+          <div class="keys-row"><kbd>[</kbd><kbd>]</kbd><span>prev / next heading</span></div>
+        </div>
+        <div class="keys-section">
+          <div class="keys-section-title">Actions</div>
+          <div class="keys-row"><kbd>o</kbd><span>open original</span></div>
+          <div class="keys-row"><kbd>s</kbd><span>star article</span></div>
+          <div class="keys-row"><kbd>c</kbd><span>toggle contents</span></div>
+          <div class="keys-row"><kbd>t</kbd><span>toggle theme</span></div>
+          <div class="keys-row"><kbd>+</kbd><kbd>−</kbd><span>font size</span></div>
+          <div class="keys-row"><kbd>Esc</kbd><span>go back</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="theme.js"></script>
+  <script src="lib/Readability.js"></script>
+  <script src="reader.js"></script>
+</body>
+</html>
