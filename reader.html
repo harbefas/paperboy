@@ -3,9 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>paperboy — reader</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="reader.css">
 </head>
 <body>
@@ -16,11 +14,28 @@
     </button>
     <span class="topbar-title" id="topbar-title"></span>
     <img class="topbar-icon" id="topbar-icon" src="" alt="" style="display:none">
-    <button class="topbar-btn" id="theme-btn" title="Theme: auto"></button>
-    <button class="topbar-btn" id="keys-btn" title="Keyboard shortcuts">?</button>
-    <div class="font-controls">
-      <button class="topbar-btn" id="font-decrease" title="Decrease font size">A−</button>
-      <button class="topbar-btn" id="font-increase" title="Increase font size">A+</button>
+    <div class="topbar-menu-wrap">
+      <button class="topbar-btn topbar-menu-btn" id="menu-btn" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="topbar-menu" id="topbar-menu">
+        <div class="menu-row">
+          <span class="menu-label">Theme</span>
+          <button class="topbar-btn" id="theme-btn" title="Theme: auto">Auto</button>
+        </div>
+        <div class="menu-row">
+          <span class="menu-label">Font</span>
+          <div class="font-controls">
+            <button class="topbar-btn" id="font-family-btn" title="Toggle font family">Serif</button>
+            <button class="topbar-btn" id="font-decrease" title="Decrease font size">A−</button>
+            <button class="topbar-btn" id="font-increase" title="Increase font size">A+</button>
+          </div>
+        </div>
+        <div class="menu-row">
+          <span class="menu-label">Keys</span>
+          <button class="topbar-btn" id="keys-btn" title="Keyboard shortcuts">?</button>
+        </div>
+      </div>
     </div>
     <a class="open-link" id="open-link" target="_blank" rel="noopener" title="Open original">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -57,22 +72,25 @@
           <div class="keys-row"><kbd>d</kbd><kbd>u</kbd><span>half page down / up</span></div>
           <div class="keys-row"><kbd>g g</kbd><span>top</span></div>
           <div class="keys-row"><kbd>G</kbd><span>bottom</span></div>
-          <div class="keys-row"><kbd>1</kbd>–<kbd>9</kbd><kbd>0</kbd><span>jump to heading</span></div>
-          <div class="keys-row"><kbd>[</kbd><kbd>]</kbd><span>prev / next heading</span></div>
+          <div class="keys-row"><kbd>h</kbd><kbd>l</kbd><span>prev / next heading</span></div>
         </div>
         <div class="keys-section">
           <div class="keys-section-title">Actions</div>
+          <div class="keys-row"><kbd>Space</kbd><span>page down / up</span></div>
           <div class="keys-row"><kbd>o</kbd><span>open original</span></div>
           <div class="keys-row"><kbd>s</kbd><span>star article</span></div>
           <div class="keys-row"><kbd>c</kbd><span>toggle contents</span></div>
           <div class="keys-row"><kbd>t</kbd><span>toggle theme</span></div>
           <div class="keys-row"><kbd>+</kbd><kbd>−</kbd><span>font size</span></div>
+          <div class="keys-row"><kbd>f</kbd><span>font family</span></div>
+          <div class="keys-row"><kbd>[</kbd><kbd>]</kbd><span>prev / next article</span></div>
           <div class="keys-row"><kbd>Esc</kbd><span>go back</span></div>
         </div>
       </div>
     </div>
   </div>
 
+  <script src="lib/highlight.min.js"></script>
   <script src="theme.js"></script>
   <script src="lib/Readability.js"></script>
   <script src="reader.js"></script>

@@ -1,41 +1,35 @@
 #!/usr/bin/env node
 
 const fs = require('fs/promises');
-const fsSync = require('fs');
 const path = require('path');
 const os = require('os');
 
 function getDir(msg) {
+  const home = os.homedir();
+  let dir;
   if (msg.dir) {
-    return msg.dir.replace(/^~/, os.homedir());
+    dir = path.resolve(msg.dir.replace(/^~/, home));
+  } else {
+    dir = path.join(home, 'paperboy');
   }
-  return path.join(os.homedir(), 'paperboy');
+  if (dir !== home && !dir.startsWith(home + path.sep)) {
+    dir = path.join(home, 'paperboy');
+  }
+  return dir;
 }
 
-function readMessage() {
-  return new Promise((resolve) => {
-    const chunks = [];
-    let size = null;
-    let received = 0;
-
-    process.stdin.on('readable', () => {
-      if (size === null) {
-        const bytesRead = process.stdin.read(4);
-        if (!bytesRead) return;
-        size = bytesRead.readUInt32LE(0);
-      }
-
-      const chunk = process.stdin.read(size - received);
-      if (chunk) {
-        chunks.push(chunk);
-        received += chunk.length;
-        if (received >= size) {
-          const data = Buffer.concat(chunks).toString('utf8');
-          resolve(JSON.parse(data));
-        }
-      }
-    });
-  });
+async function* readMessages() {
+  let leftover = Buffer.alloc(0);
+  for await (const chunk of process.stdin) {
+    leftover = Buffer.concat([leftover, chunk]);
+    while (leftover.length >= 4) {
+      const size = leftover.readUInt32LE(0);
+      if (leftover.length < 4 + size) break;
+      const msgBuf = leftover.slice(4, 4 + size);
+      leftover = leftover.slice(4 + size);
+      try { yield JSON.parse(msgBuf.toString('utf8')); } catch {}
+    }
+  }
 }
 
 function sendMessage(msg) {
@@ -75,15 +69,17 @@ async function appendJSONL(filepath, entry, dir) {
 
 async function writeJSON(filepath, data, dir) {
   await ensureDir(dir);
-  await fs.writeFile(filepath, JSON.stringify(data, null, 2) + '\n');
+  const tmp = filepath + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(data) + '\n');
+  await fs.rename(tmp, filepath);
   fileCache.delete(filepath);
 }
 
 const fileCache = new Map();
 
-async function main() {
-  const msg = await readMessage();
+async function handleMessage(msg) {
   const dir = getDir(msg);
+  const id = msg.id;
   const feedsFile = path.join(dir, 'feeds.json');
   const historyFile = path.join(dir, 'history.jsonl');
   const starredFile = path.join(dir, 'starred.jsonl');
@@ -91,28 +87,28 @@ async function main() {
 
   switch (msg.type) {
     case 'PING':
-      sendMessage({ type: 'PONG' });
+      sendMessage({ type: 'PONG', id });
       break;
 
     case 'GET_FEEDS':
       try {
         if (fileCache.has(feedsFile)) {
-          sendMessage({ type: 'FEEDS', feeds: fileCache.get(feedsFile) });
+          sendMessage({ type: 'FEEDS', feeds: fileCache.get(feedsFile), id });
         } else {
           const content = await fs.readFile(feedsFile, 'utf8');
           const feeds = JSON.parse(content);
           fileCache.set(feedsFile, feeds);
-          sendMessage({ type: 'FEEDS', feeds });
+          sendMessage({ type: 'FEEDS', feeds, id });
         }
       } catch {
-        sendMessage({ type: 'FEEDS', feeds: [] });
+        sendMessage({ type: 'FEEDS', feeds: [], id });
       }
       break;
 
     case 'SET_FEEDS':
       await writeJSON(feedsFile, msg.feeds, dir);
       fileCache.set(feedsFile, msg.feeds);
-      sendMessage({ type: 'OK' });
+      sendMessage({ type: 'OK', id });
       break;
 
     case 'APPEND_HISTORY': {
@@ -122,53 +118,60 @@ async function main() {
         existing[idx] = msg.entry;
         await ensureDir(dir);
         await fs.writeFile(historyFile, existing.map(e => JSON.stringify(e)).join('\n') + '\n');
+        fileCache.set(historyFile, existing);
       } else {
         await appendJSONL(historyFile, msg.entry, dir);
       }
-      sendMessage({ type: 'OK' });
+      sendMessage({ type: 'OK', id });
       break;
     }
 
     case 'GET_HISTORY':
-      sendMessage({ type: 'HISTORY', history: await readJSONL(historyFile) });
+      sendMessage({ type: 'HISTORY', history: await readJSONL(historyFile), id });
       break;
 
     case 'SET_STARRED':
       await writeJSON(starredFile, msg.starred, dir);
       fileCache.set(starredFile, msg.starred);
-      sendMessage({ type: 'OK' });
+      sendMessage({ type: 'OK', id });
       break;
 
     case 'GET_STARRED':
-      sendMessage({ type: 'STARRED', starred: await readJSONL(starredFile) });
+      sendMessage({ type: 'STARRED', starred: await readJSONL(starredFile), id });
       break;
 
     case 'GET_CATEGORIES':
       try {
         if (fileCache.has(categoriesFile)) {
-          sendMessage({ type: 'CATEGORIES', categories: fileCache.get(categoriesFile) });
+          sendMessage({ type: 'CATEGORIES', categories: fileCache.get(categoriesFile), id });
         } else {
           const content = await fs.readFile(categoriesFile, 'utf8');
           const categories = JSON.parse(content);
           fileCache.set(categoriesFile, categories);
-          sendMessage({ type: 'CATEGORIES', categories });
+          sendMessage({ type: 'CATEGORIES', categories, id });
         }
       } catch {
-        sendMessage({ type: 'CATEGORIES', categories: {} });
+        sendMessage({ type: 'CATEGORIES', categories: {}, id });
       }
       break;
 
     case 'SET_CATEGORIES':
       await writeJSON(categoriesFile, msg.categories, dir);
       fileCache.set(categoriesFile, msg.categories);
-      sendMessage({ type: 'OK' });
+      sendMessage({ type: 'OK', id });
       break;
 
     default:
-      sendMessage({ type: 'ERROR', error: 'Unknown message type' });
+      sendMessage({ type: 'ERROR', error: 'Unknown message type', id });
   }
 }
 
-main().catch((e) => {
-  sendMessage({ type: 'ERROR', error: e.message });
-});
+async function main() {
+  for await (const msg of readMessages()) {
+    handleMessage(msg).catch(e => {
+      sendMessage({ type: 'ERROR', error: e.message, id: msg.id });
+    });
+  }
+}
+
+main().catch(() => {});

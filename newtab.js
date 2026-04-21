@@ -1,9 +1,13 @@
-initTheme('theme-btn');
-
 // ── Performant state ──────────────────────────────────────────────────
 let searchTimer = null;
 let pendingRaf = null;
+let _feedReadyBatchTimer = null;
 const feedItems = document.getElementById('feed-items');
+
+feedItems.addEventListener('mouseenter', e => {
+  const item = e.target.closest('.item[data-url]');
+  if (item && !item._prefetched) { item._prefetched = true; preloadArticle(item.dataset.url); }
+}, true);
 
 function scheduleRender(forceNav = false) {
   if (!pendingRaf) {
@@ -53,39 +57,22 @@ function showSkeletons(count = 5) {
 }
 
 // ── Content fade ──────────────────────────────────────────────────────
+const _contentEl = document.querySelector('.content');
 function fadeContent(fn) {
-  const content = document.querySelector('.content');
-  content.classList.add('fading');
-  content.classList.remove('fading-in');
+  _contentEl.classList.add('fading');
+  _contentEl.classList.remove('fading-in');
   setTimeout(() => {
     fn();
-    content.classList.remove('fading');
-    content.classList.add('fading-in');
+    _contentEl.classList.remove('fading');
+    _contentEl.classList.add('fading-in');
   }, 150);
 }
-
-// ── Scroll reveal ─────────────────────────────────────────────────────
-let revealBatch = 0;
-
-const revealObserver = new IntersectionObserver((entries) => {
-  let batchIdx = 0;
-  entries.forEach(entry => {
-    if (!entry.isIntersecting) return;
-    revealObserver.unobserve(entry.target);
-    const el = entry.target;
-    const delay = entry.target.dataset.stagger
-      ? parseInt(entry.target.dataset.stagger)
-      : batchIdx++ * 50;
-    el.style.animationDelay = delay + 'ms';
-    el.classList.add('visible');
-  });
-}, { threshold: 0.05, rootMargin: '0px 0px -10px 0px' });
 
 function observeItems() {
   const items = document.querySelectorAll('.item:not(.visible)');
   items.forEach((el, i) => {
-    el.dataset.stagger = Math.min(i, 7) * 55;
-    revealObserver.observe(el);
+    el.style.animationDelay = Math.min(i, 7) * 55 + 'ms';
+    el.classList.add('visible');
   });
 }
 
@@ -98,10 +85,62 @@ function closeOverlay(overlayEl) {
 }
 
 // ── Keys modal ────────────────────────────────────────────────────────
+// ── Focus trap ────────────────────────────────────────────────────────
+function trapFocus(el) {
+  const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+  function handler(e) {
+    if (e.key !== 'Tab') return;
+    const els = [...el.querySelectorAll(FOCUSABLE)].filter(n => n.offsetParent !== null);
+    if (!els.length) return;
+    const first = els[0], last = els[els.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+  document.addEventListener('keydown', handler);
+  const firstEl = el.querySelector(FOCUSABLE);
+  if (firstEl) firstEl.focus();
+  return () => document.removeEventListener('keydown', handler);
+}
+
+// ── Online / offline ──────────────────────────────────────────────────
+function updateOnlineStatus() {
+  const btn = document.getElementById('refresh-btn');
+  const online = navigator.onLine;
+  btn.disabled = !online;
+  btn.title = online ? 'Refresh feeds' : 'Offline — no connection';
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
+// Auto-refresh when coming back to a stale tab
+const FOCUS_REFRESH_TTL = 15 * 60 * 1000;
+let _lastFocusRefresh = Date.now();
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !allFeeds.length || !navigator.onLine) return;
+  const age = Date.now() - Math.max(_lastFocusRefresh, lastUpdatedTs || 0);
+  if (age < FOCUS_REFRESH_TTL) return;
+  _lastFocusRefresh = Date.now();
+  loadFeeds(false).then(feeds => { allFeeds = feeds; rebuildFeedUrlMap(); });
+});
+
+// ── Keys modal ────────────────────────────────────────────────────────
 const keysOverlay = document.getElementById('keys-overlay');
-document.getElementById('keys-btn').addEventListener('click', () => keysOverlay.style.display = 'flex');
-document.getElementById('keys-close').addEventListener('click', () => closeOverlay(keysOverlay));
-keysOverlay.addEventListener('click', e => { if (e.target === keysOverlay) closeOverlay(keysOverlay); });
+let _removeKeysTrap = null;
+function openKeysOverlay() {
+  keysOverlay.style.display = 'flex';
+  if (_removeKeysTrap) _removeKeysTrap();
+  _removeKeysTrap = trapFocus(keysOverlay);
+}
+function closeKeysOverlay() {
+  closeOverlay(keysOverlay);
+  if (_removeKeysTrap) { _removeKeysTrap(); _removeKeysTrap = null; }
+}
+document.getElementById('keys-btn').addEventListener('click', openKeysOverlay);
+document.getElementById('keys-close').addEventListener('click', closeKeysOverlay);
+keysOverlay.addEventListener('click', e => { if (e.target === keysOverlay) closeKeysOverlay(); });
 
 const PAGE_SIZE = 10;
 
@@ -118,20 +157,28 @@ let activeView = 'feeds';
 let activeTag = null;
 let feedPages = {};
 let starredUrls = new Set();
+let starredEntries = [];
+let historyEntries = [];
 let readUrls = new Set();
 let categories = {}; // { "url": ["tag1", "tag2"] }
+let categoriesVersion = 0;
 let collapsedGroups = new Set();
+let collapsedVersion = 0;
 let searchQuery = '';
+const feedErrors = new Map(); // url -> error message
 
 const STARRED_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
 const UNSTARRED_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
 const CHEVRON_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+const EP_PLAY_SVG  = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+const EP_PAUSE_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
 const EXT_LINK_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 const REFRESH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
 
 const resolvedOgImages = new Map();
 let searchIndex = [];
 let searchIndexUrls = new Set();
+let _chronoItems = [];
 
 function buildSearchIndex(feeds, incremental = false) {
   if (!incremental) {
@@ -153,13 +200,7 @@ function buildSearchIndex(feeds, incremental = false) {
   });
 }
 
-let preloadTimer = null;
-function preloadArticleDebounced(url) {
-  clearTimeout(preloadTimer);
-  preloadTimer = setTimeout(() => {
-    browser.runtime.sendMessage({ type: 'FETCH_ARTICLE', url }).catch(() => {});
-  }, 300);
-}
+const READER_BASE_URL = browser.runtime.getURL('reader.html');
 
 async function toggleStar(url, title, btn, image) {
   const { isStarred } = await browser.runtime.sendMessage({
@@ -168,12 +209,14 @@ async function toggleStar(url, title, btn, image) {
   });
   if (isStarred) {
     starredUrls.add(url);
+    starredEntries.unshift({ url, title: title || url, image: image || '', starredAt: new Date().toISOString() });
     btn.classList.add('starred');
-    btn.innerHTML = STARRED_SVG;
+    setSVG(btn, STARRED_SVG);
   } else {
     starredUrls.delete(url);
+    starredEntries = starredEntries.filter(e => e.url !== url);
     btn.classList.remove('starred');
-    btn.innerHTML = UNSTARRED_SVG;
+    setSVG(btn, UNSTARRED_SVG);
   }
 }
 
@@ -194,33 +237,43 @@ feedItems.addEventListener('click', (e) => {
     const item = itemBody.closest('.item');
     const url = item?.dataset.url;
     const title = item?.dataset.title;
-    if (url) openReader(url, title);
+    const summary = item?.dataset.summary;
+    if (url) openReader(url, title, summary);
   }
 });
 
-feedItems.addEventListener('mouseover', (e) => {
-  const itemBody = e.target.closest('.item-body');
-  if (itemBody && !itemBody.dataset.preloaded) {
-    const url = itemBody.closest('.item')?.dataset.url;
-    if (url) {
-      itemBody.dataset.preloaded = '1';
-      preloadArticleDebounced(url);
-    }
+feedItems.addEventListener('mousemove', () => {
+  if (selectedIdx >= 0) {
+    const items = getItems();
+    if (items[selectedIdx]) items[selectedIdx].classList.remove('keyboard-selected');
+    selectedIdx = -1;
   }
-});
+}, { passive: true });
 
+
+const _dateCache = new Map();
 function formatDate(str) {
   if (!str) return '';
+  if (_dateCache.has(str)) return _dateCache.get(str);
   try {
     const d = new Date(str);
-    if (isNaN(d)) return '';
-    return d.toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+    const result = isNaN(d) ? '' : d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+    _dateCache.set(str, result);
+    return result;
   } catch { return ''; }
 }
 
-function openReader(url, title) {
-  let readerUrl = browser.runtime.getURL('reader.html') + '?url=' + encodeURIComponent(url);
+function openReader(url, title, summary) {
+  const queue = getItems().map(el => ({
+    url: el.dataset.url || '',
+    title: el.dataset.title || '',
+    summary: el.dataset.summary || '',
+  })).filter(i => i.url);
+  if (queue.length) sessionStorage.setItem('readerQueue', JSON.stringify(queue));
+
+  let readerUrl = READER_BASE_URL + '?url=' + encodeURIComponent(url);
   if (title) readerUrl += '&title=' + encodeURIComponent(title);
+  if (summary) readerUrl += '&summary=' + encodeURIComponent(summary);
   window.location.href = readerUrl;
 }
 
@@ -235,13 +288,90 @@ function renderSearchResults(container, feeds) {
     e.titleLower.includes(q) || e.summaryLower.includes(q)
   );
   if (!matches.length) {
-    container.innerHTML = `<div class="empty-state"><p>No results for "${searchQuery}"</p></div>`;
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    const emptyP = document.createElement('p');
+    emptyP.textContent = `No results for "${searchQuery}"`;
+    emptyDiv.appendChild(emptyP);
+    container.replaceChildren(emptyDiv);
     return;
   }
   const section = document.createElement('div');
   section.className = 'feed-section';
   matches.forEach(({ item, feedTitle }) => section.appendChild(makeItem(item, feedTitle)));
   container.appendChild(section);
+  invalidateItemsCache();
+  requestAnimationFrame(observeItems);
+}
+
+function renderChronologicalView(container, feeds) {
+  _chronoItems = [];
+  feeds.forEach(feed => {
+    (feed.items || [])
+      .filter(i => !i.link || !readUrls.has(i.link))
+      .forEach(item => _chronoItems.push({ item, feedTitle: feed.title || feed.url }));
+  });
+  _chronoItems.sort((a, b) =>
+    (b.item.date ? new Date(b.item.date).getTime() : 0) -
+    (a.item.date ? new Date(a.item.date).getTime() : 0)
+  );
+
+  if (!_chronoItems.length) {
+    const state = document.createElement('div');
+    state.className = 'all-read-state';
+    state.innerHTML = `
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <strong>You're all caught up</strong>
+      <span>No unread articles — check back later</span>`;
+    container.appendChild(state);
+    return;
+  }
+
+  const section = document.createElement('div');
+  section.className = 'feed-section';
+  const page = feedPages['__all__'] || 0;
+  const visible = _chronoItems.slice(0, (page + 1) * PAGE_SIZE);
+  const frag = document.createDocumentFragment();
+  visible.forEach(({ item, feedTitle }) => frag.appendChild(makeItem(item, feedTitle)));
+  section.appendChild(frag);
+
+  const remaining = _chronoItems.length - visible.length;
+  if (remaining > 0) {
+    const more = document.createElement('button');
+    more.className = 'show-more-btn';
+    more.textContent = `Show more (${remaining})`;
+    more.addEventListener('click', () => {
+      feedPages['__all__'] = (feedPages['__all__'] || 0) + 1;
+      appendChronoPage(section);
+    });
+    section.appendChild(more);
+  }
+
+  container.appendChild(section);
+  invalidateItemsCache();
+  requestAnimationFrame(observeItems);
+}
+
+function appendChronoPage(section) {
+  section.querySelector('.show-more-btn')?.remove();
+  const page = feedPages['__all__'] || 0;
+  const newItems = _chronoItems.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const frag = document.createDocumentFragment();
+  newItems.forEach(({ item, feedTitle }) => frag.appendChild(makeItem(item, feedTitle)));
+  section.appendChild(frag);
+
+  const remaining = _chronoItems.length - (page + 1) * PAGE_SIZE;
+  if (remaining > 0) {
+    const more = document.createElement('button');
+    more.className = 'show-more-btn';
+    more.textContent = `Show more (${remaining})`;
+    more.addEventListener('click', () => {
+      feedPages['__all__'] = (feedPages['__all__'] || 0) + 1;
+      appendChronoPage(section);
+    });
+    section.appendChild(more);
+  }
+
   invalidateItemsCache();
   requestAnimationFrame(observeItems);
 }
@@ -265,6 +395,11 @@ function renderItems(feeds) {
     return;
   }
 
+  if (!activeUrl && !activeTag && activeView === 'feeds') {
+    renderChronologicalView(container, feeds);
+    return;
+  }
+
   const toRender = activeUrl
     ? feeds.filter(f => f.url === activeUrl)
     : activeTag
@@ -274,6 +409,7 @@ function renderItems(feeds) {
   if (!toRender.length) return;
 
   const frag = document.createDocumentFragment();
+  let renderedItemCount = 0;
 
   if (activeTag && !activeUrl) {
     const header = document.createElement('div');
@@ -323,7 +459,7 @@ function renderItems(feeds) {
 
       const chevron = document.createElement('span');
       chevron.className = 'section-chevron';
-      chevron.innerHTML = CHEVRON_SVG;
+      setSVG(chevron, CHEVRON_SVG);
       title.appendChild(chevron);
 
       const itemsWrap = document.createElement('div');
@@ -372,12 +508,14 @@ function renderItems(feeds) {
     const allItems = feed.items || [];
     const items = activeUrl ? allItems : allItems.filter(item => !item.link || !readUrls.has(item.link));
 
-    if (!items.length) return;
+    if (!items.length && !feedErrors.has(feed.url)) return;
+    renderedItemCount += items.length;
 
     const section = document.createElement('div');
     section.className = 'feed-section';
     section.dataset.feedUrl = feed.url;
 
+    let itemsContainer = section;
     if (!activeUrl || toRender.length > 1) {
       const title = document.createElement('div');
       title.className = 'feed-section-title';
@@ -395,11 +533,12 @@ function renderItems(feeds) {
 
       const chevron = document.createElement('span');
       chevron.className = 'section-chevron';
-      chevron.innerHTML = CHEVRON_SVG;
+      setSVG(chevron, CHEVRON_SVG);
       title.appendChild(chevron);
 
       const itemsWrap = document.createElement('div');
       itemsWrap.className = 'section-items';
+      itemsContainer = itemsWrap;
 
       title.style.cursor = 'pointer';
       let collapsed = false;
@@ -412,37 +551,61 @@ function renderItems(feeds) {
       section.appendChild(title);
       section.appendChild(itemsWrap);
     }
+    if (feedErrors.has(feed.url)) {
+      const banner = document.createElement('div');
+      banner.className = 'feed-error-banner';
+      const errMsg = document.createElement('span');
+      errMsg.textContent = feedErrors.get(feed.url);
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'feed-error-retry';
+      retryBtn.textContent = 'Retry';
+      retryBtn.addEventListener('click', () => {
+        feedErrors.delete(feed.url);
+        navBtnCache.get(feed.url)?.querySelector('.feed-error-dot')?.remove();
+        setFetching(feed.url, true);
+        browser.runtime.sendMessage({ type: 'RETRY_FEED', url: feed.url });
+        scheduleRender();
+      });
+      banner.appendChild(errMsg);
+      banner.appendChild(retryBtn);
+      itemsContainer.appendChild(banner);
+    }
 
-    const itemsContainer = section.querySelector('.section-items') || section;
     const page = feedPages[feed.url] || 0;
     const visible = items.slice(0, (page + 1) * PAGE_SIZE);
 
     const itemFrag = document.createDocumentFragment();
-    visible.forEach(item => itemFrag.appendChild(makeItem(item)));
+    visible.forEach(item => itemFrag.appendChild(
+      feed.isPodcast ? makeEpisodeItem(item, feed) : makeItem(item)
+    ));
     itemsContainer.appendChild(itemFrag);
 
     const remaining = items.length - visible.length;
     if (remaining > 0) {
-      const more = document.createElement('button');
-      more.className = 'show-more-btn';
-      more.textContent = `Show more (${remaining})`;
-      more.addEventListener('click', () => {
-        feedPages[feed.url] = (feedPages[feed.url] || 0) + 1;
-        appendMoreItems(itemsContainer, feed, items, feeds);
-      });
-      itemsContainer.appendChild(more);
+      if (activeUrl) {
+        const sentinel = document.createElement('div');
+        sentinel.className = 'scroll-sentinel';
+        sentinel.dataset.feedUrl = feed.url;
+        itemsContainer.appendChild(sentinel);
+        scrollObserver.observe(sentinel);
+      } else {
+        const more = document.createElement('button');
+        more.className = 'show-more-btn';
+        more.textContent = `Show more (${remaining})`;
+        more.addEventListener('click', () => {
+          feedPages[feed.url] = (feedPages[feed.url] || 0) + 1;
+          appendMoreItems(itemsContainer, feed, items, feeds);
+        });
+        itemsContainer.appendChild(more);
+      }
     }
 
     frag.appendChild(section);
   });
 
   // All-read empty state
-  if (!activeUrl && activeView === 'feeds') {
-    let hasItems = false;
-    for (const child of frag.children) {
-      if (child.querySelectorAll('.item').length) { hasItems = true; break; }
-    }
-    if (!hasItems) {
+  if (!activeUrl && activeView === 'feeds' && renderedItemCount === 0) {
+    {
       const state = document.createElement('div');
       state.className = 'all-read-state';
       state.innerHTML = `
@@ -459,52 +622,45 @@ function renderItems(feeds) {
 }
 
 function renderStarredView(container) {
-  browser.runtime.sendMessage({ type: 'GET_STARRED' }).then(({ starred = [] }) => {
-    if (!starred.length) {
-      container.innerHTML = '<div class="empty-state"><p>No starred articles.</p></div>';
-      return;
-    }
-    const section = document.createElement('div');
-    section.className = 'feed-section';
-    const frag = document.createDocumentFragment();
-    starred.reverse().forEach(entry => {
-      const item = { title: entry.title, link: entry.url, date: entry.starredAt, image: entry.image };
-      frag.appendChild(makeItem(item));
-    });
-    section.appendChild(frag);
-    container.appendChild(section);
-    invalidateItemsCache();
-    requestAnimationFrame(observeItems);
+  if (!starredEntries.length) {
+    container.innerHTML = '<div class="empty-state"><p>No starred articles.</p></div>';
+    return;
+  }
+  const section = document.createElement('div');
+  section.className = 'feed-section';
+  const frag = document.createDocumentFragment();
+  starredEntries.forEach(entry => {
+    frag.appendChild(makeItem({ title: entry.title, link: entry.url, date: entry.starredAt, image: entry.image }));
   });
+  section.appendChild(frag);
+  container.appendChild(section);
+  invalidateItemsCache();
+  requestAnimationFrame(observeItems);
 }
 
 function renderHistoryView(container) {
-  browser.runtime.sendMessage({ type: 'GET_HISTORY' }).then(({ history = [] }) => {
-    if (!history.length) {
-      container.innerHTML = '<div class="empty-state"><p>No reading history yet.</p></div>';
-      return;
-    }
-    const section = document.createElement('div');
-    section.className = 'feed-section';
-    const title = document.createElement('div');
-    title.className = 'feed-section-title';
-    title.textContent = 'Recently Read';
-    section.appendChild(title);
-    const frag = document.createDocumentFragment();
-    history.reverse().forEach(entry => {
-      const item = { title: entry.title, link: entry.url, date: entry.readAt };
-      frag.appendChild(makeItem(item));
-    });
-    section.appendChild(frag);
-    container.appendChild(section);
-    invalidateItemsCache();
-    requestAnimationFrame(observeItems);
+  if (!historyEntries.length) {
+    container.innerHTML = '<div class="empty-state"><p>No reading history yet.</p></div>';
+    return;
+  }
+  const section = document.createElement('div');
+  section.className = 'feed-section';
+  const title = document.createElement('div');
+  title.className = 'feed-section-title';
+  title.textContent = 'Recently Read';
+  section.appendChild(title);
+  const frag = document.createDocumentFragment();
+  historyEntries.forEach(entry => {
+    frag.appendChild(makeItem({ title: entry.title, link: entry.url, date: entry.readAt }));
   });
+  section.appendChild(frag);
+  container.appendChild(section);
+  invalidateItemsCache();
+  requestAnimationFrame(observeItems);
 }
 
 function appendMoreItems(section, feed, filteredItems, feeds) {
-  const existingBtn = section.querySelector('.show-more-btn');
-  if (existingBtn) existingBtn.remove();
+  section.querySelector('.show-more-btn, .scroll-sentinel')?.remove();
 
   const page = feedPages[feed.url] || 0;
   const prevCount = page * PAGE_SIZE;
@@ -512,19 +668,29 @@ function appendMoreItems(section, feed, filteredItems, feeds) {
   const newItems = visible.slice(prevCount);
 
   const frag = document.createDocumentFragment();
-  newItems.forEach(item => frag.appendChild(makeItem(item)));
+  newItems.forEach(item => frag.appendChild(
+    feed.isPodcast ? makeEpisodeItem(item, feed) : makeItem(item)
+  ));
   section.appendChild(frag);
 
   const remaining = filteredItems.length - visible.length;
   if (remaining > 0) {
-    const more = document.createElement('button');
-    more.className = 'show-more-btn';
-    more.textContent = `Show more (${remaining})`;
-    more.addEventListener('click', () => {
-      feedPages[feed.url] = (feedPages[feed.url] || 0) + 1;
-      appendMoreItems(section, feed, filteredItems, feeds);
-    });
-    section.appendChild(more);
+    if (activeUrl) {
+      const sentinel = document.createElement('div');
+      sentinel.className = 'scroll-sentinel';
+      sentinel.dataset.feedUrl = feed.url;
+      section.appendChild(sentinel);
+      scrollObserver.observe(sentinel);
+    } else {
+      const more = document.createElement('button');
+      more.className = 'show-more-btn';
+      more.textContent = `Show more (${remaining})`;
+      more.addEventListener('click', () => {
+        feedPages[feed.url] = (feedPages[feed.url] || 0) + 1;
+        appendMoreItems(section, feed, filteredItems, feeds);
+      });
+      section.appendChild(more);
+    }
   }
 
   invalidateItemsCache();
@@ -538,6 +704,7 @@ function makeItem(item, sourceMeta) {
     el.dataset.url = item.link;
     el.dataset.title = item.title || '';
     if (item.image) el.dataset.image = item.image;
+    if (item.summary) el.dataset.summary = item.summary.slice(0, 500);
   }
 
   if (item.image) {
@@ -585,10 +752,11 @@ function makeItem(item, sourceMeta) {
   el.appendChild(body);
 
   if (item.link) {
+    const isStarred = starredUrls.has(item.link);
     const starBtn = document.createElement('button');
-    starBtn.className = 'star-btn' + (starredUrls.has(item.link) ? ' starred' : '');
+    starBtn.className = 'star-btn' + (isStarred ? ' starred' : '');
     starBtn.dataset.action = 'star';
-    starBtn.innerHTML = starredUrls.has(item.link) ? STARRED_SVG : UNSTARRED_SVG;
+    setSVG(starBtn, isStarred ? STARRED_SVG : UNSTARRED_SVG);
     el.appendChild(starBtn);
 
     const extLink = document.createElement('a');
@@ -597,7 +765,7 @@ function makeItem(item, sourceMeta) {
     extLink.target = '_blank';
     extLink.rel = 'noopener noreferrer';
     extLink.title = 'Open original';
-    extLink.innerHTML = EXT_LINK_SVG;
+    setSVG(extLink, EXT_LINK_SVG);
     el.appendChild(extLink);
   }
 
@@ -610,6 +778,246 @@ function makePlaceholder() {
   return d;
 }
 
+// ── Podcast player ────────────────────────────────────────────────────
+const podcastAudio   = document.getElementById('podcast-audio');
+const playerEl       = document.getElementById('podcast-player');
+const playerPlay     = document.getElementById('player-play');
+const playerSeek     = document.getElementById('player-seek');
+const playerCurrent  = document.getElementById('player-current');
+const playerDuration = document.getElementById('player-duration');
+const playerSpeed    = document.getElementById('player-speed');
+const playerTitle    = document.getElementById('player-title');
+const playerFeed     = document.getElementById('player-feed');
+const playerThumb    = document.getElementById('player-thumb');
+
+const SPEEDS = [1, 1.5, 2, 0.75];
+let speedIdx = 0;
+let currentEpisodeUrl = null;
+
+
+const PLAYER_STATE_KEY = 'podcastPlayerState';
+
+function savePlayerState() {
+  if (!currentEpisodeUrl) return;
+  localStorage.setItem(PLAYER_STATE_KEY, JSON.stringify({
+    audioUrl: currentEpisodeUrl,
+    currentTime: podcastAudio.currentTime,
+    title: playerTitle.textContent,
+    feedTitle: playerFeed.textContent,
+    thumb: playerThumb.src,
+    speedIdx,
+  }));
+}
+
+function clearPlayerState() {
+  localStorage.removeItem(PLAYER_STATE_KEY);
+}
+
+function fmtTime(s) {
+  if (!isFinite(s) || s < 0) return '0:00';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+function playEpisode(item, feed) {
+  if (!item.audioUrl) return;
+  const isSame = currentEpisodeUrl === item.audioUrl;
+
+  if (!isSame) {
+    currentEpisodeUrl = item.audioUrl;
+    podcastAudio.src = item.audioUrl;
+    podcastAudio.playbackRate = SPEEDS[speedIdx];
+    playerTitle.textContent = item.title;
+    playerFeed.textContent = feed?.title || '';
+    const thumb = feed?.podcastImage || feed?.icon || '';
+    playerThumb.src = thumb;
+    playerThumb.style.display = thumb ? '' : 'none';
+    playerEl.style.display = 'flex';
+    document.querySelector('.layout').classList.add('has-player');
+    document.querySelectorAll('.episode-item.playing').forEach(e => e.classList.remove('playing'));
+  }
+
+  if (podcastAudio.paused) {
+    podcastAudio.play();
+  } else {
+    podcastAudio.pause();
+  }
+
+  updatePlayingItem(item.audioUrl);
+}
+
+function updatePlayingItem(audioUrl) {
+  // Clear the previously active item (if any)
+  const prev = feedItems.querySelector('.episode-item.playing');
+  if (prev) {
+    prev.classList.remove('playing');
+    const btn = prev.querySelector('.episode-play-btn');
+    if (btn) btn.innerHTML = EP_PLAY_SVG;
+  }
+  if (!audioUrl) return;
+  const el = feedItems.querySelector(`.episode-item[data-audio-url="${CSS.escape(audioUrl)}"]`);
+  if (!el) return;
+  const isPlaying = !podcastAudio.paused;
+  el.classList.toggle('playing', isPlaying);
+  const btn = el.querySelector('.episode-play-btn');
+  if (btn) btn.innerHTML = isPlaying ? EP_PAUSE_SVG : EP_PLAY_SVG;
+}
+
+podcastAudio.addEventListener('play',  () => updatePlayingItem(currentEpisodeUrl));
+podcastAudio.addEventListener('pause', () => updatePlayingItem(currentEpisodeUrl));
+
+let _lastTimeSec = -1;
+podcastAudio.addEventListener('timeupdate', () => {
+  if (!isFinite(podcastAudio.duration)) return;
+  const sec = Math.floor(podcastAudio.currentTime);
+  if (sec === _lastTimeSec) return;
+  _lastTimeSec = sec;
+  playerCurrent.textContent = fmtTime(podcastAudio.currentTime);
+  playerSeek.value = (podcastAudio.currentTime / podcastAudio.duration) * 100;
+});
+
+podcastAudio.addEventListener('pause', savePlayerState);
+document.addEventListener('visibilitychange', () => { if (document.hidden) savePlayerState(); });
+window.addEventListener('beforeunload', savePlayerState);
+
+podcastAudio.addEventListener('loadedmetadata', () => {
+  _lastTimeSec = -1;
+  playerDuration.textContent = fmtTime(podcastAudio.duration);
+  const saved = podcastAudio._seekOnLoad;
+  if (saved) {
+    podcastAudio.currentTime = saved;
+    podcastAudio._seekOnLoad = null;
+    playerSeek.value = (saved / podcastAudio.duration) * 100;
+    playerCurrent.textContent = fmtTime(saved);
+  }
+});
+
+playerPlay.addEventListener('click', () => {
+  if (podcastAudio.paused) podcastAudio.play(); else podcastAudio.pause();
+});
+
+podcastAudio.addEventListener('play',  () => {
+  playerPlay.querySelector('.play-icon').style.display = 'none';
+  playerPlay.querySelector('.pause-icon').style.display = '';
+});
+podcastAudio.addEventListener('pause', () => {
+  playerPlay.querySelector('.play-icon').style.display = '';
+  playerPlay.querySelector('.pause-icon').style.display = 'none';
+});
+
+playerSeek.addEventListener('input', () => {
+  if (!isFinite(podcastAudio.duration)) return;
+  podcastAudio.currentTime = (playerSeek.value / 100) * podcastAudio.duration;
+});
+
+document.getElementById('player-skip-back').addEventListener('click', () => {
+  podcastAudio.currentTime = Math.max(0, podcastAudio.currentTime - 15);
+});
+document.getElementById('player-skip-fwd').addEventListener('click', () => {
+  podcastAudio.currentTime = Math.min(podcastAudio.duration || 0, podcastAudio.currentTime + 30);
+});
+
+playerSpeed.addEventListener('click', () => {
+  speedIdx = (speedIdx + 1) % SPEEDS.length;
+  const s = SPEEDS[speedIdx];
+  podcastAudio.playbackRate = s;
+  playerSpeed.textContent = s + '×';
+});
+
+document.getElementById('player-close').addEventListener('click', () => {
+  podcastAudio.pause();
+  podcastAudio.src = '';
+  currentEpisodeUrl = null;
+  playerEl.style.display = 'none';
+  document.querySelector('.layout').classList.remove('has-player');
+  document.querySelectorAll('.episode-item.playing').forEach(e => e.classList.remove('playing'));
+  clearPlayerState();
+});
+
+function restorePlayerState() {
+  const raw = localStorage.getItem(PLAYER_STATE_KEY);
+  if (!raw) return;
+  try {
+    const s = JSON.parse(raw);
+    if (!s.audioUrl) return;
+    currentEpisodeUrl = s.audioUrl;
+    podcastAudio.src = s.audioUrl;
+    podcastAudio._seekOnLoad = s.currentTime || 0;
+    speedIdx = s.speedIdx || 0;
+    podcastAudio.playbackRate = SPEEDS[speedIdx];
+    playerSpeed.textContent = SPEEDS[speedIdx] + '×';
+    playerTitle.textContent = s.title || '';
+    playerFeed.textContent = s.feedTitle || '';
+    playerThumb.src = s.thumb || '';
+    playerThumb.style.display = s.thumb ? '' : 'none';
+    playerCurrent.textContent = fmtTime(s.currentTime || 0);
+    playerEl.style.display = 'flex';
+    document.querySelector('.layout').classList.add('has-player');
+  } catch {}
+}
+
+function makeEpisodeItem(item, feed) {
+  const el = document.createElement('div');
+  el.className = 'episode-item';
+  if (item.audioUrl) el.dataset.audioUrl = item.audioUrl;
+
+  const playBtn = document.createElement('button');
+  playBtn.className = 'episode-play-btn';
+  playBtn.innerHTML = EP_PLAY_SVG;
+  playBtn.addEventListener('click', e => { e.stopPropagation(); playEpisode(item, feed); });
+  el.appendChild(playBtn);
+
+  const body = document.createElement('div');
+  body.className = 'episode-body';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'episode-title';
+  titleEl.textContent = item.episode ? `${item.episode}. ${item.title}` : item.title;
+  body.appendChild(titleEl);
+
+  const meta = document.createElement('div');
+  meta.className = 'episode-meta';
+  meta.textContent = formatDate(item.date);
+  body.appendChild(meta);
+
+  el.appendChild(body);
+
+  if (item.duration) {
+    const dur = document.createElement('span');
+    dur.className = 'episode-duration';
+    dur.textContent = fmtTime(item.duration);
+    el.appendChild(dur);
+  }
+
+  const isStarred = starredUrls.has(item.link);
+  const starBtn = document.createElement('button');
+  starBtn.className = 'star-btn' + (isStarred ? ' starred' : '');
+  starBtn.dataset.action = 'star';
+  setSVG(starBtn, isStarred ? STARRED_SVG : UNSTARRED_SVG);
+  starBtn.addEventListener('click', e => { e.stopPropagation(); toggleStar(item.link, item.title, starBtn, item.image || feed.podcastImage || ''); });
+  el.appendChild(starBtn);
+
+  el.addEventListener('click', () => playEpisode(item, feed));
+  return el;
+}
+
+const scrollObserver = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    scrollObserver.unobserve(entry.target);
+    const feedUrl = entry.target.dataset.feedUrl;
+    const idx = allFeedsMap.get(feedUrl);
+    if (idx === undefined) return;
+    const feed = allFeeds[idx];
+    const section = entry.target.parentElement;
+    feedPages[feedUrl] = (feedPages[feedUrl] || 0) + 1;
+    appendMoreItems(section, feed, feed.items || [], allFeeds);
+  });
+}, { rootMargin: '300px' });
+
 const ogObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (!entry.isIntersecting) return;
@@ -620,6 +1028,7 @@ const ogObserver = new IntersectionObserver((entries) => {
     browser.runtime.sendMessage({ type: 'FETCH_OG_IMAGE', url: articleUrl, cacheKey: articleUrl })
       .then(({ image }) => {
         if (!image) return;
+        if (resolvedOgImages.size >= 500) resolvedOgImages.delete(resolvedOgImages.keys().next().value);
         resolvedOgImages.set(articleUrl, image);
         const img = document.createElement('img');
         img.className = 'item-thumb';
@@ -631,8 +1040,10 @@ const ogObserver = new IntersectionObserver((entries) => {
   });
 }, { rootMargin: '200px' });
 
+let staticNavBtns = [];
 function clearActiveNav() {
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  staticNavBtns.forEach(el => el.classList.remove('active'));
+  navBtnCache.forEach(btn => btn.classList.remove('active'));
 }
 
 function setActiveNav(id) {
@@ -698,6 +1109,7 @@ function renderNav(feeds, force = false) {
     btn.id = 'nav-all';
     btn.className = 'nav-item';
     btn.textContent = 'All';
+    btn.style.animationDelay = '0ms';
     btn.addEventListener('click', showFeeds);
     staticNav.appendChild(btn);
     return btn;
@@ -708,6 +1120,7 @@ function renderNav(feeds, force = false) {
     btn.id = 'nav-starred';
     btn.className = 'nav-item';
     btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Starred';
+    btn.style.animationDelay = '40ms';
     btn.addEventListener('click', showStarred);
     staticNav.appendChild(btn);
     return btn;
@@ -718,11 +1131,13 @@ function renderNav(feeds, force = false) {
     btn.id = 'nav-history';
     btn.className = 'nav-item';
     btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> History';
+    btn.style.animationDelay = '80ms';
     btn.addEventListener('click', showHistory);
     staticNav.appendChild(btn);
     return btn;
   })();
 
+  staticNavBtns = [all, starBtn, histBtn];
   all.className = 'nav-item' + (!activeUrl && !activeTag && activeView === 'feeds' ? ' active' : '');
   starBtn.className = 'nav-item' + (activeView === 'starred' ? ' active' : '');
   histBtn.className = 'nav-item' + (activeView === 'history' ? ' active' : '');
@@ -730,7 +1145,7 @@ function renderNav(feeds, force = false) {
   const nav = document.getElementById('feed-nav');
   const feedsKey = feeds.map(f => f.url).join(',');
 
-  if (!force && nav._lastKey === feedsKey && nav._lastCats === JSON.stringify(categories) && nav._lastCollapsed === JSON.stringify([...collapsedGroups])) {
+  if (!force && nav._lastKey === feedsKey && nav._lastCatsV === categoriesVersion && nav._lastCollapsedV === collapsedVersion) {
     clearActiveNav();
     if (activeView === 'feeds' && activeUrl) {
       const btn = navBtnCache.get(activeUrl) || nav.querySelector(`button[data-url="${CSS.escape(activeUrl)}"]`);
@@ -743,8 +1158,8 @@ function renderNav(feeds, force = false) {
     return;
   }
   nav._lastKey = feedsKey;
-  nav._lastCats = JSON.stringify(categories);
-  nav._lastCollapsed = JSON.stringify([...collapsedGroups]);
+  nav._lastCatsV = categoriesVersion;
+  nav._lastCollapsedV = collapsedVersion;
 
   nav.innerHTML = '';
   navBtnCache.clear();
@@ -827,6 +1242,8 @@ function renderNav(feeds, force = false) {
       e.stopPropagation();
       if (collapsed) collapsedGroups.delete(tag);
       else collapsedGroups.add(tag);
+      collapsedVersion++;
+      browser.storage.local.set({ collapsedGroups: [...collapsedGroups] });
       renderNav(allFeeds);
     });
 
@@ -837,13 +1254,35 @@ function renderNav(feeds, force = false) {
     }
   });
 
-  if (Object.keys(grouped).length && ungrouped.length) {
+  const ungroupedFeeds    = ungrouped.filter(f => !f.isPodcast);
+  const ungroupedPodcasts = ungrouped.filter(f => f.isPodcast);
+
+  if (Object.keys(grouped).length && ungroupedFeeds.length) {
     const sep = document.createElement('div');
     sep.className = 'nav-sep';
     frag.appendChild(sep);
   }
 
-  ungrouped.forEach(feed => frag.appendChild(makeFeedBtn(feed)));
+  ungroupedFeeds.forEach(feed => frag.appendChild(makeFeedBtn(feed)));
+
+  if (ungroupedPodcasts.length) {
+    const sep = document.createElement('div');
+    sep.className = 'nav-sep';
+    frag.appendChild(sep);
+
+    const podHeader = document.createElement('div');
+    podHeader.className = 'nav-group-header';
+    podHeader.style.cursor = 'default';
+    podHeader.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="11" r="3"/><path d="M12 2a7 7 0 0 1 7 7v1a7 7 0 0 1-14 0v-1a7 7 0 0 1 7-7z"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg><span style="margin-left:5px">Podcasts</span>';
+    frag.appendChild(podHeader);
+
+    ungroupedPodcasts.forEach(feed => frag.appendChild(makeFeedBtn(feed)));
+  }
+
+  // Stagger animation delays across all newly-built nav rows
+  const navRows = frag.querySelectorAll('.nav-item, .nav-group-header');
+  navRows.forEach((el, i) => { el.style.animationDelay = `${i * 28}ms`; });
+
   nav.appendChild(frag);
 }
 
@@ -857,19 +1296,28 @@ async function loadFeeds(force = false) {
 }
 
 async function init() {
-  showSkeletons(6);
+  initTheme('theme-btn');
+  updateOnlineStatus();
+  restorePlayerState();
 
-  const [{ starred = [] }, { history = [] }, cats] = await Promise.all([
-    browser.runtime.sendMessage({ type: 'GET_STARRED' }).catch(() => ({ starred: [] })),
-    browser.runtime.sendMessage({ type: 'GET_HISTORY' }).catch(() => ({ history: [] })),
-    browser.runtime.sendMessage({ type: 'GET_CATEGORIES' }).catch(() => ({ categories: {} })),
+  const [data, feedsList] = await Promise.all([
+    browser.storage.local.get(['starred', 'history', 'categories', 'collapsedGroups']),
+    loadFeeds(),
   ]);
-  starredUrls = new Set(starred.map(s => s.url));
-  readUrls = new Set(history.map(h => h.url));
-  categories = cats?.categories || {};
-  cachedTagList = null;
 
-  allFeeds = await loadFeeds();
+  starredEntries = (data.starred || []).slice().reverse();
+  starredUrls = new Set(starredEntries.map(s => s.url));
+  historyEntries = (data.history || []).slice().reverse();
+  readUrls = new Set(historyEntries.map(h => h.url));
+  categories = data.categories || {};
+  categoriesVersion++;
+  cachedTagList = null;
+  if (data.collapsedGroups?.length) {
+    collapsedGroups = new Set(data.collapsedGroups);
+    collapsedVersion++;
+  }
+
+  allFeeds = feedsList;
   rebuildFeedUrlMap();
 
   if (!allFeeds.length) {
@@ -879,32 +1327,70 @@ async function init() {
 
   buildSearchIndex(allFeeds);
   renderNav(allFeeds, true);
-  renderItems(allFeeds);
+
+  if (allFeeds.some(f => f.items?.length > 0)) {
+    renderItems(allFeeds);
+  } else {
+    showSkeletons(6);
+  }
+}
+
+// ── Refresh progress ──────────────────────────────────────────────────
+let _refreshing = false;
+let _refreshLoaded = 0;
+let _refreshTotal = 0;
+let _refreshOriginalHTML = '';
+
+function startRefreshProgress(total) {
+  _refreshing = true;
+  _refreshLoaded = 0;
+  _refreshTotal = total;
+  const btn = document.getElementById('refresh-btn');
+  _refreshOriginalHTML = btn.innerHTML;
+  _updateRefreshBtn();
+}
+
+function _updateRefreshBtn() {
+  const btn = document.getElementById('refresh-btn');
+  if (!btn || !_refreshing) return;
+  btn.innerHTML = `<span style="font-size:11px;line-height:1;font-family:inherit">${_refreshLoaded}/${_refreshTotal}</span>`;
+}
+
+function endRefreshProgress() {
+  _refreshing = false;
+  const btn = document.getElementById('refresh-btn');
+  if (btn && _refreshOriginalHTML) btn.innerHTML = _refreshOriginalHTML;
 }
 
 document.getElementById('refresh-btn').addEventListener('click', async () => {
-  const btn = document.getElementById('refresh-btn');
-  btn.innerHTML = '<span class="spinner"></span>';
+  if (!navigator.onLine) return;
   feedPages = {};
+  startRefreshProgress(allFeeds.length);
   allFeeds = await loadFeeds(true);
   rebuildFeedUrlMap();
   renderNav(allFeeds, true);
   renderItems(allFeeds);
-  btn.innerHTML = REFRESH_SVG;
 });
 
 const overlay = document.getElementById('modal-overlay');
 const modal = document.getElementById('options-modal');
 
+let _removeModalTrap = null;
 function openModal() {
   overlay.style.display = 'flex';
   renderFeedManage();
+  if (_removeModalTrap) _removeModalTrap();
+  _removeModalTrap = trapFocus(modal);
 }
-function closeModal() { closeOverlay(overlay); }
+function closeModal() {
+  closeOverlay(overlay);
+  if (_removeModalTrap) { _removeModalTrap(); _removeModalTrap = null; }
+}
 
 document.getElementById('options-btn').addEventListener('click', () => {
   openModal();
   initNativeSettings();
+  initRefreshInterval();
 });
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
@@ -913,6 +1399,7 @@ overlay.addEventListener('click', e => { if (e.target === overlay) closeModal();
 document.getElementById('add-first-btn')?.addEventListener('click', () => {
   openModal();
   initNativeSettings();
+  initRefreshInterval();
 });
 
 async function applyFeeds(updatedUrls) {
@@ -933,7 +1420,7 @@ function timeAgo(dateStr) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(ts).toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+  return new Date(ts).toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
 }
 
 async function renderFeedManage() {
@@ -1006,6 +1493,7 @@ async function renderFeedManage() {
       async function save() {
         const tags = input.value.split(',').map(t => t.trim()).filter(Boolean);
         if (tags.length) categories[url] = tags; else delete categories[url];
+        categoriesVersion++;
         await browser.runtime.sendMessage({ type: 'SET_CATEGORIES', categories });
         renderNav(allFeeds, true);
         renderTags();
@@ -1074,20 +1562,21 @@ async function renderFeedManage() {
 
 document.getElementById('add-feed-btn').addEventListener('click', async () => {
   const input = document.getElementById('feed-url-input');
-  const msg = document.getElementById('modal-msg');
-  const url = input.value.trim();
-  if (!url) return;
+  const msgEl = document.getElementById('modal-msg');
+  const raw = input.value.trim();
+  if (!raw) return;
 
-  msg.textContent = 'Checking...';
+  msgEl.textContent = 'Discovering…';
   try {
+    const { url: feedUrl } = await browser.runtime.sendMessage({ type: 'DISCOVER_FEED', url: raw });
     const { feeds = [] } = await browser.storage.local.get('feeds');
-    if (feedUrlSet.has(url)) { msg.textContent = 'Feed already added.'; return; }
-    const updated = [...feeds, url];
+    if (feedUrlSet.has(feedUrl)) { msgEl.textContent = 'Feed already added.'; return; }
+    const updated = [...feeds, feedUrl];
     await browser.runtime.sendMessage({ type: 'SET_FEEDS', feeds: updated });
     input.value = '';
-    msg.textContent = 'Feed added.';
+    msgEl.textContent = feedUrl !== raw ? `Found: ${feedUrl}` : 'Feed added.';
     renderFeedManage();
-    setTimeout(() => { msg.textContent = ''; }, 2000);
+    setTimeout(() => { msgEl.textContent = ''; }, 3000);
     document.getElementById('empty-state').style.display = 'none';
     feedPages = {};
     allFeeds = await loadFeeds(true);
@@ -1095,7 +1584,21 @@ document.getElementById('add-feed-btn').addEventListener('click', async () => {
     renderNav(allFeeds, true);
     renderItems(allFeeds);
   } catch (e) {
-    msg.textContent = 'Error: ' + e.message;
+    msgEl.textContent = 'Error: ' + e.message;
+  }
+});
+
+const purgeBtn = document.getElementById('purge-btn');
+purgeBtn.addEventListener('click', () => {
+  if (purgeBtn.dataset.confirm) {
+    browser.storage.local.clear().then(() => window.location.reload());
+  } else {
+    purgeBtn.dataset.confirm = '1';
+    purgeBtn.textContent = 'Confirm — click again to delete';
+    setTimeout(() => {
+      purgeBtn.textContent = 'Delete all data';
+      delete purgeBtn.dataset.confirm;
+    }, 3000);
   }
 });
 
@@ -1103,13 +1606,81 @@ document.getElementById('feed-url-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('add-feed-btn').click();
 });
 
+// ── OPML export ───────────────────────────────────────────────────────
+document.getElementById('opml-export-btn').addEventListener('click', async () => {
+  const { feeds = [] } = await browser.storage.local.get('feeds');
+  const lines = feeds.map(url => {
+    const cached = allFeeds.find(f => f.url === url);
+    const title = (cached?.title || url).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const xmlUrl = url.replace(/&/g, '&amp;');
+    const htmlUrl = (cached?.link || url).replace(/&/g, '&amp;');
+    return `    <outline type="rss" text="${title}" title="${title}" xmlUrl="${xmlUrl}" htmlUrl="${htmlUrl}"/>`;
+  });
+  const opml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<opml version="2.0">',
+    '  <head><title>paperboy feeds</title></head>',
+    '  <body>',
+    ...lines,
+    '  </body>',
+    '</opml>',
+  ].join('\n');
+
+  const blob = new Blob([opml], { type: 'text/xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'paperboy-feeds.opml';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ── OPML import ───────────────────────────────────────────────────────
+document.getElementById('opml-import-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const msgEl = document.getElementById('opml-msg');
+  msgEl.textContent = 'Importing…';
+
+  try {
+    const text = await file.text();
+    const doc = new DOMParser().parseFromString(text, 'text/xml');
+    const outlines = Array.from(doc.querySelectorAll('outline[xmlUrl]'));
+    if (!outlines.length) { msgEl.textContent = 'No feeds found in file.'; return; }
+
+    const { feeds: existing = [] } = await browser.storage.local.get('feeds');
+    const existingSet = new Set(existing);
+    const toAdd = outlines.map(o => o.getAttribute('xmlUrl')).filter(u => u && !existingSet.has(u));
+
+    if (!toAdd.length) { msgEl.textContent = 'All feeds already added.'; return; }
+
+    const updated = [...existing, ...toAdd];
+    await browser.runtime.sendMessage({ type: 'SET_FEEDS', feeds: updated });
+    renderFeedManage();
+    document.getElementById('empty-state').style.display = 'none';
+    feedPages = {};
+    allFeeds = await loadFeeds(true);
+    rebuildFeedUrlMap();
+    renderNav(allFeeds, true);
+    renderItems(allFeeds);
+    msgEl.textContent = `Added ${toAdd.length} feed${toAdd.length !== 1 ? 's' : ''}.`;
+  } catch (err) {
+    msgEl.textContent = 'Error reading file.';
+  }
+
+  e.target.value = '';
+  setTimeout(() => { msgEl.textContent = ''; }, 4000);
+});
+
 browser.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'FEED_READY') {
+    feedErrors.delete(msg.feed.url);
     setFetching(msg.feed.url, false);
     const idx = allFeedsMap.get(msg.feed.url);
     if (idx >= 0) allFeeds[idx] = msg.feed;
     else allFeeds.push(msg.feed);
     rebuildFeedUrlMap();
+
+    if (_refreshing) { _refreshLoaded++; _updateRefreshBtn(); }
 
     const btn = navBtnCache.get(msg.feed.url) || document.querySelector(`#feed-nav button[data-url="${CSS.escape(msg.feed.url)}"]`);
     if (btn) {
@@ -1117,29 +1688,50 @@ browser.runtime.onMessage.addListener((msg) => {
       if (dot) dot.remove();
     }
 
-    if (activeUrl === msg.feed.url || !activeUrl) {
-      renderItems(allFeeds);
+    if (activeUrl === msg.feed.url) {
+      scheduleRender();
+    } else if (!activeUrl) {
+      // Batch multiple arriving feeds: render immediately on first content,
+      // then debounce so subsequent feeds within 350ms coalesce into one render.
+      const hasSomething = feedItems.querySelector('.item, .episode-item');
+      if (!hasSomething && msg.feed.items?.length) {
+        scheduleRender();
+      } else {
+        clearTimeout(_feedReadyBatchTimer);
+        _feedReadyBatchTimer = setTimeout(() => scheduleRender(), 350);
+      }
     }
   }
 
   if (msg.type === 'FEEDS_UPDATED') {
     allFeeds = msg.feeds;
-    allFeeds.forEach(f => setFetching(f.url, false));
+    allFeeds.forEach(f => { setFetching(f.url, false); feedErrors.delete(f.url); });
     fetchingUrls.clear();
     rebuildFeedUrlMap();
     buildSearchIndex(allFeeds, true);
+    endRefreshProgress();
     scheduleRender(true);
+    setLastUpdated(Date.now());
   }
 
   if (msg.type === 'FEED_ERROR') {
     setFetching(msg.url, false);
+    feedErrors.set(msg.url, msg.error || 'Failed to fetch');
     const btn = navBtnCache.get(msg.url) || document.querySelector(`#feed-nav button[data-url="${CSS.escape(msg.url)}"]`);
     if (btn) {
       navBtnCache.set(msg.url, btn);
       if (!btn.querySelector('.feed-error-dot')) {
         const dot = document.createElement('span');
         dot.className = 'feed-error-dot';
-        dot.title = msg.error || 'Failed to fetch';
+        dot.title = `${msg.error || 'Failed to fetch'} — click to retry`;
+        dot.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dot.remove();
+          feedErrors.delete(msg.url);
+          setFetching(msg.url, true);
+          browser.runtime.sendMessage({ type: 'RETRY_FEED', url: msg.url });
+          scheduleRender();
+        });
         btn.appendChild(dot);
       }
     }
@@ -1148,22 +1740,34 @@ browser.runtime.onMessage.addListener((msg) => {
 
 async function checkNativeConnection() {
   const statusEl = document.getElementById('native-status');
+  const setupEl  = document.getElementById('native-setup');
   statusEl.innerHTML = '<span class="status-dot pending"></span> Checking...';
   statusEl.className = 'native-status pending';
+  setupEl.style.display = 'none';
 
   try {
     const response = await browser.runtime.sendMessage({ type: 'NATIVE_PING' });
     if (response?.ok) {
-      statusEl.innerHTML = '<span class="status-dot connected"></span> Connected';
+      const dot = document.createElement('span');
+      dot.className = 'status-dot connected';
+      statusEl.replaceChildren(dot, ' Connected');
       statusEl.className = 'native-status connected';
     } else {
       const err = response?.error || 'unknown error';
-      statusEl.innerHTML = `<span class="status-dot disconnected"></span> Not connected: ${err}`;
+      const dot = document.createElement('span');
+      dot.className = 'status-dot disconnected';
+      statusEl.replaceChildren(dot, ` Not connected: ${err}`);
       statusEl.className = 'native-status disconnected';
+      setupEl.style.display = 'flex';
+      setupEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   } catch (e) {
-    statusEl.innerHTML = `<span class="status-dot disconnected"></span> Error: ${e.message}`;
+    const dot = document.createElement('span');
+    dot.className = 'status-dot disconnected';
+    statusEl.replaceChildren(dot, ` Error: ${e.message}`);
     statusEl.className = 'native-status disconnected';
+    setupEl.style.display = 'flex';
+    setupEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
 
@@ -1182,6 +1786,35 @@ async function initNativeSettings() {
   checkNativeConnection();
 }
 
+async function initRefreshInterval() {
+  const { refreshInterval = 15 } = await browser.storage.local.get('refreshInterval');
+  document.querySelectorAll('.refresh-interval-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.interval) === refreshInterval);
+  });
+}
+
+document.querySelectorAll('.refresh-interval-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const interval = parseInt(btn.dataset.interval);
+    await browser.runtime.sendMessage({ type: 'SET_REFRESH_INTERVAL', interval });
+    document.querySelectorAll('.refresh-interval-btn').forEach(b => {
+      b.classList.toggle('active', b === btn);
+    });
+  });
+});
+
+document.getElementById('options-modal').addEventListener('click', e => {
+  const btn = e.target.closest('.copy-btn');
+  if (!btn) return;
+  const text = btn.dataset.copy;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+    setTimeout(() => { btn.innerHTML = orig; }, 1200);
+  }).catch(() => {});
+});
+
 // ── Keyboard navigation ───────────────────────────────────────────────
 let selectedIdx = -1;
 let lastKey = null;
@@ -1194,7 +1827,7 @@ function invalidateItemsCache() {
 
 function getItems() {
   if (cachedItems) return cachedItems;
-  cachedItems = Array.from(feedItems.querySelectorAll('.item'));
+  cachedItems = Array.from(feedItems.querySelectorAll('.item, .episode-item'));
   return cachedItems;
 }
 
@@ -1207,6 +1840,8 @@ function selectItem(idx, items) {
     items[prevIdx].classList.remove('keyboard-selected');
   }
   items[selectedIdx].classList.add('keyboard-selected');
+  const url = items[selectedIdx].dataset.url;
+  if (url && !items[selectedIdx]._prefetched) { items[selectedIdx]._prefetched = true; preloadArticle(url); }
   items[selectedIdx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -1218,6 +1853,11 @@ function openSelected() {
 
 function getFeedUrls() {
   return allFeeds.map(f => f.url);
+}
+
+function getContextFeedUrls() {
+  if (activeTag) return allFeeds.filter(f => categories[f.url]?.includes(activeTag)).map(f => f.url);
+  return allFeeds.filter(f => !categories[f.url]?.length).map(f => f.url);
 }
 
 document.addEventListener('keydown', e => {
@@ -1232,6 +1872,11 @@ document.addEventListener('keydown', e => {
     if (settingsOverlay.style.display !== 'none') { closeModal(); return; }
     if (shortcutsOverlay.style.display !== 'none') { closeOverlay(shortcutsOverlay); return; }
   }
+
+  const now = Date.now();
+  const isDouble = lastKey === e.key && now - lastKeyTime < 500;
+  lastKey = e.key;
+  lastKeyTime = now;
 
   const settingsOpen = document.getElementById('modal-overlay').style.display !== 'none';
 
@@ -1283,11 +1928,6 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  const now = Date.now();
-  const isDouble = lastKey === e.key && now - lastKeyTime < 500;
-  lastKey = e.key;
-  lastKeyTime = now;
-
   const items = getItems();
 
   switch (e.key) {
@@ -1318,9 +1958,10 @@ document.addEventListener('keydown', e => {
       el.querySelector('.star-btn')?.click();
       break;
     }
-    case '[': {
+    case '[':
+    case 'h': {
       e.preventDefault();
-      const urls = getFeedUrls();
+      const urls = getContextFeedUrls();
       if (!urls.length) break;
       const cur = urls.indexOf(activeUrl);
       const prev = cur <= 0 ? urls[urls.length - 1] : urls[cur - 1];
@@ -1332,9 +1973,10 @@ document.addEventListener('keydown', e => {
       selectedIdx = -1;
       break;
     }
-    case ']': {
+    case ']':
+    case 'l': {
       e.preventDefault();
-      const urls = getFeedUrls();
+      const urls = getContextFeedUrls();
       if (!urls.length) break;
       const cur = urls.indexOf(activeUrl);
       const next = cur < 0 || cur >= urls.length - 1 ? urls[0] : urls[cur + 1];
@@ -1348,6 +1990,22 @@ document.addEventListener('keydown', e => {
     }
     case 'Escape':
       if (activeUrl) { showFeeds(); selectedIdx = -1; }
+      else if (selectedIdx >= 0) {
+        items[selectedIdx]?.classList.remove('keyboard-selected');
+        selectedIdx = -1;
+      }
+      break;
+    case 'x': {
+      e.preventDefault();
+      const el = items[selectedIdx];
+      if (!el) break;
+      const extUrl = el.dataset.url;
+      if (extUrl) window.open(extUrl, '_blank', 'noopener,noreferrer');
+      break;
+    }
+    case ' ':
+      e.preventDefault();
+      window.scrollBy({ top: e.shiftKey ? -window.innerHeight * 0.9 : window.innerHeight * 0.9, behavior: 'smooth' });
       break;
     case 'A':
       e.preventDefault();
@@ -1379,31 +2037,52 @@ document.addEventListener('keydown', e => {
       break;
     case '/':
       e.preventDefault();
-      document.getElementById('search-bar').style.display = 'flex';
-      document.getElementById('search-input').focus();
+      openSearch();
       break;
     case '?':
-      keysOverlay.style.display = keysOverlay.style.display === 'none' ? 'flex' : 'none';
+      if (keysOverlay.style.display === 'none') openKeysOverlay(); else closeKeysOverlay();
       break;
-    default: {
-      const num = e.key === '0' ? 9 : parseInt(e.key) - 1;
-      if (!isNaN(num) && num >= 0 && num <= 9) {
-        const feeds = activeTag
-          ? allFeeds.filter(f => categories[f.url]?.includes(activeTag))
-          : allFeeds.filter(f => !categories[f.url]?.length);
-        if (feeds[num]) {
-          e.preventDefault();
-          activeView = 'feeds';
-          activeUrl = feeds[num].url;
-          feedPages = {};
-          selectedIdx = -1;
-          renderNav(allFeeds);
-          renderItems(allFeeds);
-        }
+    case 'p':
+      if (playerEl.style.display !== 'none') {
+        e.preventDefault();
+        if (podcastAudio.paused) podcastAudio.play(); else podcastAudio.pause();
       }
-    }
+      break;
+    case '<':
+      if (playerEl.style.display !== 'none') {
+        e.preventDefault();
+        podcastAudio.currentTime = Math.max(0, podcastAudio.currentTime - 15);
+      }
+      break;
+    case '>':
+      if (playerEl.style.display !== 'none') {
+        e.preventDefault();
+        podcastAudio.currentTime = Math.min(podcastAudio.duration || 0, podcastAudio.currentTime + 30);
+      }
+      break;
+    default:
+      break;
   }
 });
+
+function openSearch() {
+  const bar = document.getElementById('search-bar');
+  bar.classList.remove('hiding');
+  bar.style.display = 'flex';
+  document.getElementById('search-input').focus();
+}
+
+function closeSearch() {
+  const bar = document.getElementById('search-bar');
+  bar.classList.add('hiding');
+  bar.addEventListener('animationend', () => {
+    bar.style.display = 'none';
+    bar.classList.remove('hiding');
+  }, { once: true });
+  searchQuery = '';
+  document.getElementById('search-input').value = '';
+  renderItems(allFeeds);
+}
 
 const searchInput = document.getElementById('search-input');
 searchInput.addEventListener('input', () => {
@@ -1412,12 +2091,63 @@ searchInput.addEventListener('input', () => {
   searchTimer = setTimeout(() => renderItems(allFeeds), 200);
 });
 searchInput.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    searchQuery = '';
-    searchInput.value = '';
-    document.getElementById('search-bar').style.display = 'none';
-    renderItems(allFeeds);
-  }
+  if (e.key === 'Escape') closeSearch();
 });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !allFeeds.length) return;
+  browser.runtime.sendMessage({ type: 'FETCH_FEEDS' }).then(r => {
+    if (!r?.feeds?.length) return;
+    allFeeds = r.feeds;
+    rebuildFeedUrlMap();
+    buildSearchIndex(allFeeds, true);
+    scheduleRender(true);
+  }).catch(() => {});
+});
+
+// Keep MV3 service worker alive while the newtab page is open
+function connectKeepalive() {
+  const port = browser.runtime.connect({ name: 'keepalive' });
+  port.onDisconnect.addListener(() => setTimeout(connectKeepalive, 1_000));
+}
+connectKeepalive();
+
+// ── Last updated ──────────────────────────────────────────────────────
+let lastUpdatedTs = null;
+let lastUpdatedTimer = null;
+
+function setLastUpdated(ts) {
+  lastUpdatedTs = ts;
+  renderLastUpdated();
+  clearInterval(lastUpdatedTimer);
+  lastUpdatedTimer = setInterval(renderLastUpdated, 60_000);
+}
+
+function renderLastUpdated() {
+  const el = document.getElementById('last-updated');
+  if (!el || !lastUpdatedTs) return;
+  const diff = Math.floor((Date.now() - lastUpdatedTs) / 1000);
+  if (diff < 60) el.textContent = 'Updated just now';
+  else if (diff < 3600) el.textContent = `Updated ${Math.floor(diff / 60)}m ago`;
+  else el.textContent = `Updated ${Math.floor(diff / 3600)}h ago`;
+}
+
+// ── Sidebar toggle ────────────────────────────────────────────────────
+(function () {
+  const sidebar = document.getElementById('sidebar');
+  const collapseBtn = document.getElementById('sidebar-collapse-btn');
+  const openBtn = document.getElementById('sidebar-open-btn');
+
+  function setSidebarCollapsed(collapsed) {
+    sidebar.classList.toggle('collapsed', collapsed);
+    openBtn.style.display = collapsed ? 'flex' : 'none';
+    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+  }
+
+  collapseBtn.addEventListener('click', () => setSidebarCollapsed(true));
+  openBtn.addEventListener('click', () => setSidebarCollapsed(false));
+
+  if (localStorage.getItem('sidebarCollapsed') === '1') setSidebarCollapsed(true);
+})();
 
 init();

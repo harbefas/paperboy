@@ -1,6 +1,9 @@
 const LibrssDir = (() => {
   let nativeDir = null;
   let dirLoaded = false;
+  let _port = null;
+  let _reqId = 0;
+  const _pending = new Map(); // id -> { resolve, reject, timer }
 
   async function loadNativeDir() {
     if (dirLoaded) return;
@@ -11,11 +14,43 @@ const LibrssDir = (() => {
     dirLoaded = true;
   }
 
+  function getPort() {
+    if (_port) return _port;
+    _port = browser.runtime.connectNative('paperboy');
+    _port.onMessage.addListener((msg) => {
+      const { id, ...rest } = msg;
+      if (id !== undefined && _pending.has(id)) {
+        const { resolve, timer } = _pending.get(id);
+        clearTimeout(timer);
+        _pending.delete(id);
+        resolve(rest);
+      }
+    });
+    _port.onDisconnect.addListener(() => {
+      _port = null;
+      for (const [, { reject, timer }] of _pending) {
+        clearTimeout(timer);
+        reject(new Error('Native port disconnected'));
+      }
+      _pending.clear();
+    });
+    return _port;
+  }
+
   async function sendNative(msg) {
     await loadNativeDir();
-    if (nativeDir) msg.dir = nativeDir;
+    const payload = nativeDir ? { ...msg, dir: nativeDir } : { ...msg };
     try {
-      return await browser.runtime.sendNativeMessage('paperboy', msg);
+      const port = getPort();
+      const id = ++_reqId;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          _pending.delete(id);
+          reject(new Error('Native message timeout'));
+        }, 10_000);
+        _pending.set(id, { resolve, reject, timer });
+        port.postMessage({ ...payload, id });
+      });
     } catch {
       return null;
     }
@@ -25,8 +60,6 @@ const LibrssDir = (() => {
     const resp = await sendNative({ type: 'PING' });
     return resp?.type === 'PONG';
   }
-
-  const HISTORY_MAX = 1000;
 
   return {
     nativeAvailable,
@@ -47,41 +80,12 @@ const LibrssDir = (() => {
     },
 
     async appendHistory(entry) {
-      const { history = [] } = await browser.storage.local.get('history');
-      const urlSet = new Set(history.map(h => h.url));
-      if (urlSet.has(entry.url)) {
-        const idx = history.findIndex(h => h.url === entry.url);
-        history[idx] = entry;
-      } else {
-        history.push(entry);
-      }
-      if (history.length > HISTORY_MAX) {
-        history.splice(0, history.length - HISTORY_MAX);
-      }
-      await browser.storage.local.set({ history });
       await sendNative({ type: 'APPEND_HISTORY', entry });
     },
 
     async getHistory() {
       const { history = [] } = await browser.storage.local.get('history');
       return history;
-    },
-
-    async toggleStar(entry) {
-      const { starred = [] } = await browser.storage.local.get('starred');
-      const urlSet = new Set(starred.map(s => s.url));
-      let isStarred;
-      if (urlSet.has(entry.url)) {
-        const idx = starred.findIndex(s => s.url === entry.url);
-        starred.splice(idx, 1);
-        isStarred = false;
-      } else {
-        starred.push(entry);
-        isStarred = true;
-      }
-      await browser.storage.local.set({ starred });
-      await sendNative({ type: 'SET_STARRED', starred });
-      return isStarred;
     },
 
     async getStarred() {
@@ -113,10 +117,6 @@ const LibrssDir = (() => {
       nativeDir = dir;
       dirLoaded = true;
       return browser.storage.local.set({ nativeDir: dir });
-    },
-
-    async appendHistoryList(list) {
-      await sendNative({ type: 'SET_STARRED', starred: list });
     },
 
     async setStarred(list) {
