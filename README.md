@@ -4,6 +4,8 @@ Minimal, opinionated, keyboard-first, local-first RSS reader and podcast player 
 
 No accounts. No cloud sync. No tracking. Your feeds, articles, and episodes live on your machine as plain files.
 
+[![Available on Firefox Add-ons](https://img.shields.io/badge/Firefox-Add--on-FF7139?logo=firefox-browser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/paperboy/)
+
 ![paperboy — RSS reader and podcast player as new tab](docs/screenshot.png)
 
 ## What it does
@@ -22,16 +24,18 @@ Every new tab opens paperboy. You get your RSS feeds and podcast queue in one pl
 
 ## Install
 
+### Firefox (recommended)
+
+Install directly from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/paperboy/) — no developer mode needed.
+
+### Chrome / manual load
+
 ```bash
 git clone https://github.com/harbefas/paperboy
 cd paperboy/cli && bash install.sh
 ```
 
 The install script creates symlinks in `~/.local/bin/`, installs native messaging manifests for Firefox and Chrome, and sets up `~/paperboy/` as the local storage directory.
-
-### Load the extension
-
-**Firefox:** `about:debugging` → *This Firefox* → *Load Temporary Add-on* → select `manifest.json`
 
 **Chrome:** `chrome://extensions` → enable *Developer mode* → *Load unpacked* → select the repo root
 
