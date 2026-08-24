@@ -56,6 +56,12 @@ Three-tier design:
 
 JSONL format is intentional — git-friendly, append-only, no merge conflicts.
 
+## Design
+
+**Read `mateCreations/DESIGN.md` before touching any UI.** It is the spec for the Yerba Mate / Tererê design system (tokens, typography, components, do's and don'ts) and it governs this repo.
+
+Palette, type scale, radii and motion come from `styles/mate-tokens.css`, which is generated upstream and vendored by `scripts/sync-tokens.sh` — there is no build step here, so the CSS is linked directly from `newtab.html` / `reader.html`. **Never edit that file, and never write a hex in `newtab.css` / `reader.css`**: change the JSON in `mateCreations/ui/tokens` and rerun the script. The theme switch is the `data-theme` attribute on `<html>`, set by `theme.js`.
+
 ## Key Constraints
 
 - **No build step** — edits to `.js`/`.html`/`.css` files take effect on extension reload

@@ -1,0 +1,186 @@
+/**
+ * Do not edit directly, this file was auto-generated.
+ */
+
+:root {
+  --olive-bg: #282d1c;
+  --olive-bg-2: #363c26;
+  --olive-bg-3: #404834;
+  --olive-surface: #3a4230;
+  --cream-bg: #fbf1c7;
+  --cream-bg-2: #ebdfb0;
+  --cream-bg-3: #ddd2a0;
+  --cream-surface: #f5eac0;
+  --amber-dark: #d4a033;
+  --amber-dark-hover: #e0b54a;
+  --amber-dark-muted: rgba(212, 160, 51, 0.15);
+  --amber-light: #c88010;
+  --amber-light-hover: #d99a2e;
+  --amber-light-muted: rgba(200, 128, 16, 0.12);
+  --amber-light-text: #8f4f00;
+  --amber-light-text-hover: #7a4200;
+  --amber-light-ink: #241f00;
+  --hue-green-dark-100: #c0e882;
+  --hue-green-dark-300: #8fb44f;
+  --hue-green-dark-500: #7a9e38;
+  --hue-green-dark-700: #3a5900;
+  --hue-green-dark-900: #173200;
+  --hue-green-light-100: #e0dd83;
+  --hue-green-light-300: #ada94f;
+  --hue-green-light-500: #79740e;
+  --hue-green-light-700: #555000;
+  --hue-green-light-900: #312a00;
+  --hue-red-dark: #ea6962;
+  --hue-red-light: #9d0006;
+  --hue-orange-dark: #c09060;
+  --hue-orange-light: #c88010;
+  --hue-yellow-dark: #a67c52;
+  --hue-yellow-light: #b57614;
+  --hue-cyan-dark: #5ea89a;
+  --hue-cyan-light: #427b58;
+  --hue-blue-dark: #7eb2d1;
+  --hue-blue-light: #076678;
+  --hue-purple-dark: #b07878;
+  --hue-purple-light: #8f3f71;
+  --hue-magenta-dark: #c08888;
+  --hue-magenta-light: #9d4f7d;
+  --neutral-border-dark: #4f5b4a;
+  --neutral-border-light: #ddd2a0;
+  --neutral-border-2-dark: #5a6a54;
+  --neutral-border-2-light: #928374;
+  --neutral-border-3-dark: #7a8573;
+  --neutral-border-3-light: #7c6f64;
+  --neutral-text-dark: #dce0d9;
+  --neutral-text-light: #3c3836;
+  --neutral-text-2-dark: #b8c0af;
+  --neutral-text-2-light: #504945;
+  --neutral-text-3-dark: #a0ab98;
+  --neutral-text-3-light: #665c54;
+  --neutral-text-4-dark: #7a8573;
+  --neutral-text-4-light: #7c6f64;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-art: 12px;
+  --radius-round: 50%;
+  --shadow-sm: 0px 1px 2px 0px #00000033;
+  --shadow-md: 0px 4px 16px 0px #0000004d;
+  --shadow-lg: 0px 12px 40px 0px #00000066;
+  --duration-instant: 90ms;
+  --duration-base: 120ms;
+  --duration-settle: 260ms;
+  --duration-ambient: 900ms;
+  --duration-drift: 26000ms;
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --ease-focus: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --ease-exit: cubic-bezier(0.5, 0, 0.9, 0.4);
+  --font-serif: 'EB Garamond Variable', 'EB Garamond', Georgia, serif;
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+  --space-64: 64px;
+  --space-96: 96px;
+  --font-size-2xs: 12px;
+  --font-size-xs: 14px;
+  --font-size-sm: 16px;
+  --font-size-base: 18px;
+  --font-size-lg: 22px;
+  --font-size-xl: 28px;
+  --font-size-2xl: 35px;
+  --font-size-3xl: 44px;
+  --font-size-4xl: 55px;
+  --leading-tight: 1.2;
+  --leading-ui: 1.4;
+  --leading-prose: 1.75;
+  --tracking-headline: -0.01em;
+  --tracking-eyebrow: 0.06em;
+  --measure-prose: 70ch;
+  --measure-shell: 1180px;
+  --size-sidebar: 180px;
+  --size-toggle: 22px;
+  --transition-base: var(--duration-base);
+}
+
+/**
+ * Do not edit directly, this file was auto-generated.
+ */
+
+[data-theme="dark"] {
+  --bg: var(--olive-bg);
+  --bg-2: var(--olive-bg-2);
+  --bg-3: var(--olive-bg-3);
+  --surface: var(--olive-surface);
+  --border: var(--neutral-border-dark);
+  --border-2: var(--neutral-border-2-dark);
+  --border-3: var(--neutral-border-3-dark);
+  --tx: var(--neutral-text-dark);
+  --tx-2: var(--neutral-text-2-dark);
+  --tx-3: var(--neutral-text-3-dark);
+  --tx-4: var(--neutral-text-4-dark);
+  --accent: var(--amber-dark);
+  --accent-hover: var(--amber-dark-hover);
+  --accent-muted: var(--amber-dark-muted);
+  --accent-text: var(--amber-dark);
+  --accent-text-hover: var(--amber-dark-hover);
+  --accent-2: var(--hue-green-dark-500);
+  --on-accent: var(--olive-bg);
+  --p2: var(--hue-red-dark);
+  --red: var(--hue-red-dark);
+  --orange: var(--hue-orange-dark);
+  --yellow: var(--hue-yellow-dark);
+  --green: var(--hue-green-dark-500);
+  --green-100: var(--hue-green-dark-100);
+  --green-300: var(--hue-green-dark-300);
+  --green-700: var(--hue-green-dark-700);
+  --green-900: var(--hue-green-dark-900);
+  --cyan: var(--hue-cyan-dark);
+  --blue: var(--hue-blue-dark);
+  --link: var(--hue-blue-dark);
+  --purple: var(--hue-purple-dark);
+  --magenta: var(--hue-magenta-dark);
+}
+
+/**
+ * Do not edit directly, this file was auto-generated.
+ */
+
+[data-theme="light"] {
+  --bg: var(--cream-bg);
+  --bg-2: var(--cream-bg-2);
+  --bg-3: var(--cream-bg-3);
+  --surface: var(--cream-surface);
+  --border: var(--neutral-border-light);
+  --border-2: var(--neutral-border-2-light);
+  --border-3: var(--neutral-border-3-light);
+  --tx: var(--neutral-text-light);
+  --tx-2: var(--neutral-text-2-light);
+  --tx-3: var(--neutral-text-3-light);
+  --tx-4: var(--neutral-text-4-light);
+  --accent: var(--amber-light);
+  --accent-hover: var(--amber-light-hover);
+  --accent-muted: var(--amber-light-muted);
+  --accent-text: var(--amber-light-text);
+  --accent-text-hover: var(--amber-light-text-hover);
+  --accent-2: var(--hue-green-light-500);
+  --on-accent: var(--amber-light-ink);
+  --p2: var(--hue-red-light);
+  --red: var(--hue-red-light);
+  --orange: var(--hue-orange-light);
+  --yellow: var(--hue-yellow-light);
+  --green: var(--hue-green-light-500);
+  --green-100: var(--hue-green-light-100);
+  --green-300: var(--hue-green-light-300);
+  --green-700: var(--hue-green-light-700);
+  --green-900: var(--hue-green-light-900);
+  --cyan: var(--hue-cyan-light);
+  --blue: var(--hue-blue-light);
+  --link: var(--hue-blue-light);
+  --purple: var(--hue-purple-light);
+  --magenta: var(--hue-magenta-light);
+}

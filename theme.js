@@ -23,8 +23,9 @@ function resolveTheme(pref) {
 
 function applyTheme(pref) {
   const resolved = resolveTheme(pref);
-  document.documentElement.classList.remove('theme-dark', 'theme-light');
-  document.documentElement.classList.add('theme-' + resolved);
+  // Tokens live in [data-theme] blocks (styles/mate-tokens.css); the theme
+  // switch is that attribute and nothing else.
+  document.documentElement.dataset.theme = resolved;
 }
 
 function initTheme(btnId) {

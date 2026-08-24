@@ -1,53 +1,8 @@
+/* Palette, type, spacing and motion come from styles/mate-tokens.css, which is
+   generated upstream (mateCreations/ui/tokens). Only what the design system has
+   no opinion about lives here. */
 :root {
-  --bg:       #282d1c;
-  --bg-2:     #363c26;
-  --bg-3:     #404834;
-  --surface:  #3a4230;
-  --border:   #4f5b4a;
-  --border-2: #5a6a54;
-  --border-3: #7a8573;
-  --tx:       #dce0d9;
-  --tx-2:     #a8b09f;
-  --tx-3:     #7a8573;
-  --tx-4:     #666e60;
-  --accent:   #d4a033;
-  --accent-hover: #e0b54a;
-  --accent-muted: rgba(212, 160, 51, 0.15);
-  --green:    #7a9e38;
-  --red:      #c25d44;
-  --orange:   #c09060;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.4);
-  --transition: 120ms ease;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg:       #fbf1c7;
-    --bg-2:     #ebdfb0;
-    --bg-3:     #ddd2a0;
-    --surface:  #f5eac0;
-    --border:   #ddd2a0;
-    --border-2: #928374;
-    --border-3: #7c6f64;
-    --tx:       #3c3836;
-    --tx-2:     #504945;
-    --tx-3:     #665c54;
-    --tx-4:     #7c6f64;
-    --accent:   #c88010;
-    --accent-hover: #d99a2e;
-    --accent-muted: rgba(200, 128, 16, 0.12);
-    --green:    #79740e;
-    --red:      #9d0006;
-    --orange:   #c88010;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-    --shadow-lg: 0 12px 40px rgba(0,0,0,0.1);
-  }
+  --transition: var(--duration-base) ease;
 }
 
 /* ── Reset ────────────────────────────────────────────────────────── */
@@ -61,7 +16,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--tx);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -593,7 +548,7 @@ nav {
 
 /* ── Buttons ───────────────────────────────────────────────────────── */
 .btn {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
   color: var(--tx);
@@ -641,7 +596,7 @@ nav {
 
 /* ── Show more ─────────────────────────────────────────────────────── */
 .show-more-btn {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
   color: var(--accent);
@@ -696,7 +651,7 @@ nav {
   animation: fadeInUp 0.2s ease both;
 }
 
-html.theme-light .modal {
+html[data-theme="light"] .modal {
   box-shadow: var(--shadow-lg), 0 0 0 1px var(--border), 0 0 40px rgba(200, 128, 16, 0.06);
 }
 
@@ -822,7 +777,7 @@ html.theme-light .modal {
 .feed-manage-item:focus-within .feed-manage-age { opacity: 1; }
 
 .tag-input {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   background: var(--bg);
   border: 1px solid var(--accent);
@@ -859,7 +814,7 @@ html.theme-light .modal {
 
 .add-feed-row input {
   flex: 1;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   background: var(--bg);
   border: 1px solid var(--border-2);
@@ -1173,7 +1128,7 @@ html.theme-light .modal {
 }
 
 kbd {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 500;
   background: var(--bg-3);
@@ -1185,23 +1140,6 @@ kbd {
   white-space: nowrap;
 }
 
-/* ── Theme overrides ───────────────────────────────────────────────── */
-html.theme-dark {
-  --bg: #282d1c; --bg-2: #363c26; --bg-3: #404834; --surface: #3a4230;
-  --border: #4f5b4a; --border-2: #5a6a54; --border-3: #7a8573;
-  --tx: #dce0d9; --tx-2: #a8b09f; --tx-3: #7a8573; --tx-4: #666e60;
-  --accent: #d4a033; --accent-hover: #e0b54a; --accent-muted: rgba(212,160,51,.15);
-  --green: #7a9e38; --red: #c25d44; --orange: #c09060;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.2); --shadow-md: 0 4px 16px rgba(0,0,0,.3); --shadow-lg: 0 12px 40px rgba(0,0,0,.4);
-}
-html.theme-light {
-  --bg: #fbf1c7; --bg-2: #ebdfb0; --bg-3: #ddd2a0; --surface: #f5eac0;
-  --border: #ddd2a0; --border-2: #928374; --border-3: #7c6f64;
-  --tx: #3c3836; --tx-2: #504945; --tx-3: #665c54; --tx-4: #7c6f64;
-  --accent: #c88010; --accent-hover: #d99a2e; --accent-muted: rgba(200,128,16,.12);
-  --green: #79740e; --red: #9d0006; --orange: #c88010;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.06); --shadow-md: 0 4px 16px rgba(0,0,0,.08); --shadow-lg: 0 12px 40px rgba(0,0,0,.1);
-}
 
 /* ── Podcast player ────────────────────────────────────────────────── */
 .podcast-player {

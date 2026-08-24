@@ -1,57 +1,8 @@
+/* Palette, type, spacing and motion come from styles/mate-tokens.css, which is
+   generated upstream (mateCreations/ui/tokens). Only what the design system has
+   no opinion about lives here. */
 :root {
-  --bg:       #282d1c;
-  --bg-2:     #363c26;
-  --bg-3:     #404834;
-  --surface:  #3a4230;
-  --border:   #4f5b4a;
-  --border-2: #5a6a54;
-  --border-3: #7a8573;
-  --tx:       #dce0d9;
-  --tx-2:     #a8b09f;
-  --tx-3:     #7a8573;
-  --tx-4:     #666e60;
-  --accent:   #d4a033;
-  --accent-hover: #e0b54a;
-  --accent-muted: rgba(212, 160, 51, 0.15);
-  --green:    #7a9e38;
-  --red:      #c25d44;
-  --yellow:   #d4a033;
-  --orange:   #c09060;
-  --link:     #d4a033;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.4);
-  --transition: 120ms ease;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg:       #fbf1c7;
-    --bg-2:     #ebdfb0;
-    --bg-3:     #ddd2a0;
-    --surface:  #f5eac0;
-    --border:   #ddd2a0;
-    --border-2: #928374;
-    --border-3: #7c6f64;
-    --tx:       #3c3836;
-    --tx-2:     #504945;
-    --tx-3:     #665c54;
-    --tx-4:     #7c6f64;
-    --accent:   #c88010;
-    --accent-hover: #d99a2e;
-    --accent-muted: rgba(200, 128, 16, 0.12);
-    --green:    #79740e;
-    --red:      #9d0006;
-    --yellow:   #d4a033;
-    --orange:   #c88010;
-    --link:     #c88010;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-    --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
-    --shadow-lg: 0 12px 40px rgba(0,0,0,0.1);
-  }
+  --transition: var(--duration-base) ease;
 }
 
 /* ── Reset ────────────────────────────────────────────────────────── */
@@ -65,7 +16,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--tx);
-  font-family: var(--prose-font, 'EB Garamond', Georgia, serif);
+  font-family: var(--prose-font, var(--font-serif));
   font-size: var(--prose-size, 18px);
   line-height: 1.75;
   -webkit-font-smoothing: antialiased;
@@ -224,7 +175,7 @@ html, body {
   padding: 8px;
   min-width: 160px;
   z-index: 50;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .topbar-menu.open { display: block; }
@@ -248,7 +199,7 @@ html, body {
   border: none;
   color: var(--tx-4);
   cursor: pointer;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
   padding: 4px 7px;
@@ -296,7 +247,7 @@ html, body {
 }
 
 .article-meta {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
   color: var(--tx-4);
   letter-spacing: -0.01em;
@@ -318,7 +269,7 @@ html, body {
   line-height: 0.82;
   margin: 0.06em 0.1em 0 0;
   color: var(--tx);
-  font-family: 'EB Garamond', Georgia, serif;
+  font-family: var(--font-serif);
 }
 
 /* Suppress drop cap when first element is not a plain paragraph */
@@ -398,7 +349,7 @@ html, body {
   text-align: center;
   margin-top: 8px;
   font-style: italic;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .prose blockquote {
@@ -482,7 +433,7 @@ html, body {
   padding: 20px 24px;
   margin: 1.5rem 0;
   color: var(--accent);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 500;
   text-align: center;
@@ -506,7 +457,7 @@ html, body {
   border-collapse: collapse;
   font-size: 0.9rem;
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 .prose th, .prose td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
 .prose th { background: var(--bg-2); font-weight: 600; color: var(--tx-2); font-size: 0.78rem; letter-spacing: 0.02em; }
@@ -527,7 +478,7 @@ html, body {
   border: 1px solid var(--border-2);
   border-radius: 8px;
   box-shadow: var(--shadow-lg), 0 0 0 1px var(--border), 0 0 40px rgba(212, 160, 51, 0.06);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   animation: fadeInUp 0.2s ease both;
 }
 .modal-header {
@@ -548,7 +499,7 @@ html, body {
 .keys-section-title { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tx-4); margin-bottom: 4px; }
 .keys-row { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--tx-3); }
 .keys-row span { margin-left: 4px; }
-kbd { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; font-weight: 500; background: var(--bg-3); border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 4px; padding: 2px 6px; color: var(--tx-2); white-space: nowrap; }
+kbd { font-family: var(--font-sans); font-size: 11px; font-weight: 500; background: var(--bg-3); border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 4px; padding: 2px 6px; color: var(--tx-2); white-space: nowrap; }
 
 /* ── Drop cap: suppress when first child is code ───────────────────── */
 .prose > p:first-child:has(> code:first-child)::first-letter,
@@ -646,23 +597,6 @@ kbd { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-
 
 .prose img, .hero-img { cursor: zoom-in; }
 
-/* ── Theme overrides ───────────────────────────────────────────────── */
-html.theme-dark {
-  --bg: #282d1c; --bg-2: #363c26; --bg-3: #404834; --surface: #3a4230;
-  --border: #4f5b4a; --border-2: #5a6a54; --border-3: #7a8573;
-  --tx: #dce0d9; --tx-2: #a8b09f; --tx-3: #7a8573; --tx-4: #666e60;
-  --accent: #d4a033; --accent-hover: #e0b54a; --accent-muted: rgba(212,178,51,.15);
-  --green: #7a9e38; --red: #c25d44; --orange: #c09060; --link: #d4a033;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.2); --shadow-md: 0 4px 16px rgba(0,0,0,.3); --shadow-lg: 0 12px 40px rgba(0,0,0,.4);
-}
-html.theme-light {
-  --bg: #fbf1c7; --bg-2: #ebdfb0; --bg-3: #ddd2a0; --surface: #f5eac0;
-  --border: #ddd2a0; --border-2: #928374; --border-3: #7c6f64;
-  --tx: #3c3836; --tx-2: #504945; --tx-3: #665c54; --tx-4: #7c6f64;
-  --accent: #c88010; --accent-hover: #d99a2e; --accent-muted: rgba(200,128,16,.12);
-  --green: #79740e; --red: #9d0006; --orange: #c88010; --link: #c88010;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.06); --shadow-md: 0 4px 16px rgba(0,0,0,.08); --shadow-lg: 0 12px 40px rgba(0,0,0,.1);
-}
 
 /* ── Table of Contents ─────────────────────────────────────────────── */
 .toc {
@@ -672,7 +606,7 @@ html.theme-light {
   width: 200px;
   max-height: calc(100vh - 120px);
   overflow-y: auto;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   opacity: 0;
   transition: opacity 0.3s ease;
@@ -749,7 +683,7 @@ html.theme-light {
   font-size: 0.7em;
   line-height: 0;
   vertical-align: super;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .prose sup a {
@@ -770,7 +704,7 @@ html.theme-light {
   border-top: 1px solid var(--border);
   font-size: 0.85rem;
   color: var(--tx-3);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
 .prose [class*="footnote"] ol,
@@ -793,7 +727,7 @@ html.theme-light {
   margin-top: 3rem;
   padding-top: 1.5rem;
   border-top: 1px solid var(--border);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 .next-article-label {
   display: block;
@@ -821,7 +755,7 @@ html.theme-light {
 
 .error {
   color: var(--red);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   padding: 2rem 0;
   text-align: center;
