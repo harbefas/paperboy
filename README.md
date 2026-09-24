@@ -120,4 +120,4 @@ JSONL is intentional — append-only means no merge conflicts when syncing acros
 
 ## License
 
-MIT
+GPL-3.0
